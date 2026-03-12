@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: truco-web
+    env: node
+    plan: free
+    buildCommand: |
+      cd client && npm install && npm run build
+      cd ../server && npm install && npm run build
+    startCommand: node server/dist/index.js

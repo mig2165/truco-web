@@ -1,0 +1,339 @@
+
+> server@1.0.0 dev
+> nodemon src/index.ts
+
+[33m[nodemon] 3.1.14[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: ts,json[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: upa_tdP-xaxcEd5PAAnode:events:502
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: read EIO
+    at TTY.onStreamRead (node:internal/stream_base_commons:218:20)
+Emitted 'error' event on ReadStream instance at:
+    at emitErrorNT (node:internal/streams/destroy:169:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:128:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  errno: -5,
+  code: 'EIO',
+  syscall: 'read'
+}
+
+Node.js v20.20.0
+dex.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: 7DK_D1a8d3N2QMdqAAAB
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: en_CUIFXdL0lmCYZAAAB
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: IH0XeUFJEub3NP_xAAAB
+User connected: YR14TXf5h3QXZjHuAAAD
+User connected: mlxqWNhFma3x5xWQAAAF
+User connected: xCnmb8jaj3RFkLpSAAAH
+User connected: cTb5BX8a1zrAEB8YAAAJ
+User connected: YUQ6soUNyPN5VATAAAAL
+User connected: M6RQDO9r3Kgo1W8VAAAN
+User connected: i6APxxDk9znFcoeJAAAP
+User connected: nubyNGIILQmUedS8AAAR
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: KveWt-aOhvXQ2MlBAAAB
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/gameManager.ts(343,17): error TS18048: 'state' is possibly 'undefined'.
+src/gameManager.ts(344,17): error TS18048: 'state' is possibly 'undefined'.
+src/gameManager.ts(348,21): error TS18048: 'state' is possibly 'undefined'.
+src/gameManager.ts(349,21): error TS18048: 'state' is possibly 'undefined'.
+src/gameManager.ts(351,17): error TS18048: 'state' is possibly 'undefined'.
+src/gameManager.ts(352,32): error TS2345: Argument of type 'GameState | undefined' is not assignable to parameter of type 'GameState'.
+  Type 'undefined' is not assignable to type 'GameState'.
+
+    at createTSError (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:863:19)
+    at getOutput (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:1077:36)
+    at Object.compile (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:1433:41)
+    at Module.m._compile (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:1617:30)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Object.require.extensions.<computed> [as .ts] (/Users/migs/IdeaProjects/truco-web/server/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Module.require (node:internal/modules/cjs/loader:1289:19) {
+  diagnosticCodes: [ 18048, 18048, 18048, 18048, 18048, 2345 ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: n2_OyArgURH8huDCAAAB
+User connected: II47CR8NMTA5ULBkAAAD
+User connected: GKaB6ZYEX1dT3JcYAAAF
+User connected: WltNrCc0UgRmRNcOAAAH
+User connected: JEQ627cOiU855ViTAAAJ
+User connected: _xb_9rm-7vfbc2fWAAAL
+User connected: 3cm7Z4qXeh31O2nwAAAN
+User connected: 8Chkm8QTDPwqzhu8AAAP
+User connected: cJhi62l19PgcHRfrAAAR
+User connected: fjLdg8_8JJ8U9OBoAAAT
+User connected: SAx_-uezKtp7-WF_AAAV
+User connected: 6IvKaoqbQgsf72OrAAAX
+User connected: uYr9IU4jbufAmsawAAAZ
+User connected: PW1KuliY784iuOd9AAAb
+User connected: w1RM4CV50fnTiS1qAAAd
+User connected: ArYBDk5cisMZUrZYAAAf
+User connected: 9qvT47iBwq3D4fxyAAAh
+User connected: crho_sI34hWnycHEAAAj
+User connected: MxUpI4iR3mArSJ9RAAAl
+User connected: 1FhhaU7Gd7zW2xWiAAAn
+User connected: MmhDiFz92UQ2R2ngAAAp
+User connected: YET4J6qKqrIoNCTUAAAr
+User connected: HMsoaMObwz1tl930AAAt
+User connected: fQ8TxwXsl4ag_mLkAAAv
+User connected: Ktlm73cJMtQd4JRzAAAx
+User connected: YWjxGxhW8mJHTBWsAAAz
+User connected: CCDrNivgpWQqiGcrAAA1
+User connected: HkaUtXbQVEycu4vOAAA3
+User connected: CqnT5FagdsnJqhb6AAA5
+User connected: SZ6mfoUvWaEkNat9AAA7
+User connected: Sg9Br9ZBvDyBwHy3AAA9
+User connected: rPCcbn4UxGmvM9hkAAA_
+User connected: fTBbaZ0vnAoh73kjAABB
+User connected: l_MQ90ocp0-4NnMuAABE
+User connected: w1ZXTgY-Sr4ofGJGAABG
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: _UQzntQ1Q4IdSJx0AAAB
+User connected: sF23WrIF8hW-DDSLAAAD
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: st00Au0Pig93LmpFAAAC
+User connected: qazj8jMwb1w9SU3uAAAD
+User connected: Lb7hnokWCQmK279KAAAG
+User connected: ZiK38blK-9QYczb2AAAH
+User connected: dc6mBRgW_hiyApOlAAAJ
+User connected: 1hMad53jjnlzPRMnAAAL
+User connected: U4we-paWMD34FehyAAAN
+User connected: L71aiv8NnG88F43RAAAP
+User connected: ud9cyE84ZfWyGbl0AAAR
+User connected: Tw7h3TmBRanBOH0NAAAT
+User connected: 6LT2yRja_5TKdG6vAAAV
+User connected: Gne2x162B6RB2Mq7AAAX
+User connected: 2uX2p8QmJuyQOMw8AAAZ
+User connected: 8i15myzEA4GHEsbYAAAb
+User connected: vP3s4khxEjbr9ly0AAAd
+User connected: fmY0HxTILNgoV45YAAAf
+User connected: GWbMyT49FzNWvVVeAAAh
+User connected: SH2tS9Ce7vsl1x4ZAAAj
+User connected: 73ihUbrDUPa6-guJAAAl
+User connected: wqapldsaC9inrxwQAAAn
+User connected: 8772uefy92ZLx_CvAAAp
+User connected: uaq_2QexVD3zOMViAAAr
+User connected: DjIKGocP6filK_unAAAu
+User connected: DpMT04jvo845ZBkoAAAv
+User connected: 0i_IToTOJHGjGqVkAAAx
+User connected: 1GeU5WF77RM_o9m-AAAz
+User connected: wkmaFfDa3jvkPFPWAAA1
+User connected: OeHs1MSbGrvp_HXJAAA3
+User connected: fC8VKQYRVX83_sUDAAA5
+User connected: 8O6mKlu4eTuUZ1C1AAA7
+User connected: ee8ngS8yWcJOJBwAAAA9
+User connected: _Vwkbw0Ywt9hsw9FAAA_
+User connected: YjBMfV_SoKtX4ghPAABB
+User connected: ReX84iAZHfz9u69NAABD
+User connected: acaWX3VwlWDLR5KqAABF
+User connected: p5Fr08XIKfL4p8ATAABH
+User connected: SbbZhV9voBMDu153AABJ
+User connected: LzHGFX3xHbDtxLu6AABL
+User connected: 9u0SeuXYVNi1JcocAABN
+User connected: M17sR76c6QYrCQk8AABP
+User connected: cjEMrR5HM0Mcq2dTAABR
+User connected: JaCEgfgrS9cD46KHAABT
+User connected: KMiWby_LQYEpJ6D2AABV
+User connected: iv9_Avphx_thQmPBAABX
+User connected: x98_7Y0CPJ3_enYAAABZ
+User connected: d6A1O6wPrexT0RuPAABb
+User connected: QrG2tdJYjrFPgoRfAABd
+User connected: wPaTk0eOpJfmWEKGAABf
+User connected: 96aDu1oBjD8WqdQpAABh
+User connected: 5J09LNJYafEzd3CZAABj
+User connected: 7JfFR2YcZrAnlrJrAABl
+User connected: 4f2cLGvGzOE7k600AABn
+User connected: Dd6uF_Mt84QR4tapAABp
+User connected: MZtbOML5ep8JQPvoAABr
+User connected: -vyKvFvCx8ylehXHAABt
+User connected: k55LiMSsdfdvz0xfAABv
+User connected: WVxj1UUkXeUKPB-CAABx
+User connected: I6t1bqY3VkzOpGyvAABz
+User connected: mzByQRipaM-FvStuAAB3
+User connected: XeZf1iwokQz_6_z6AAB4
+User connected: ZPcYIFRiuclKdbnoAAB5
+User connected: ZK6zKiTvCeWqJo6yAAB9
+User connected: g1VUktVlUR4mPIgKAAB-
+User connected: b4rYRQAvtaQp3Ie5AAB_
+User connected: CGeBCxxFs2yRQYD_AACC
+User connected: E9lu8sU_AAHSUgB5AACD
+User connected: gfZ8n34fhV0cv5y1AACF
+User connected: hhgZMnai0FheqLJCAACH
+User connected: Fc4PAhtEcOyKB-UUAACJ
+User connected: ZLFn7uKLTzikEnBsAACL
+User connected: SMTKOaX_m684X8c8AACO
+User connected: 7mO4Df7Zrpb4Hce8AACP
+User connected: bg47KiTBaK5C1Y-HAACR
+User connected: KJsvhrz8VTG_yrySAACT
+User connected: SseBt4bbEuZNsfW1AACV
+User connected: ID7nQ96C9lsnZt2iAACX
+User connected: U-3VtE7dv2ilVk9IAACa
+User connected: 4RmPYrSRnhpLcN4yAACb
+User connected: EHdj6zU4DEzUZVFzAACd
+User connected: TBp7B7t3GM9r9g_ZAACh
+User connected: pANZPwqv7Pk3fdgZAACj
+User connected: P-8YdWyJ76hhPItnAACm
+User connected: NYm3IP3IBqSt3-hpAACn
+User connected: acz03_KVDF_1i1zMAACp
+User connected: _ar4f99N6kFiyCaQAACr
+User connected: badVNJWCAofxiYXMAACt
+User connected: TmnZ8coFKKAzY8sYAACv
+User connected: 4p5j4rjXJ00E2UlBAACx
+User connected: 3NVFUD1NCAVZ0BAUAACz
+User connected: 9OslliLEHySkjJ-TAAC1
+User connected: ArfUhgXSO_swZP29AAC3
+User connected: N6kypV61c1b7gC8dAAC5
+User connected: a5qEUC6QuPbvIPJRAAC7
+User connected: tHnNj7hwAw1aTXgSAAC9
+User connected: bPNHjE4AI6gHjfvSAAC_
+User connected: MfGuznk4QIH6V_wOAADB
+User connected: N9KA00I4D1JHtWAxAADD
+User connected: CZPtJYNtTvOVA-MVAADF
+User connected: m43UjS4IvniqdAETAADH
+User connected: iLg_Qpj-K49TIrHyAADK
+User connected: Z299Ys9PPdRA9A_uAADL
+User connected: BMhVCFo2V_MAr-V4AADN
+User connected: nBifiI1zTatTyVVtAADP
+User connected: ukiivqphEgW4_jDPAADR
+User connected: PUZiM7EHo2cbwubpAADT
+User connected: gLhuZ4lVPRzLczncAADV
+User connected: EEao06KVXVEoNTg3AADX
+User connected: -7HVjJe3DU2yAbTLAADZ
+User connected: xvsi7d2NqbBXmge6AADb
+User connected: 0iG8RB6V7p84uFUyAADd
+User connected: _NTcVba0FuiUEHmNAADf
+User connected: k_ZwHrdaI1FPgjsmAADh
+User connected: Aw7jwFa4Mx3zUDAVAADj
+User connected: oGn75KjCQwAVK7qoAADl
+User connected: PyU3DMO55GbU9jbUAADn
+User connected: GrCxUWSEGHphjN3dAADp
+User connected: nG2qrGzsHmc1PAXGAADr
+User connected: K-XWsVbxGyo94i3SAADt
+User connected: xQXJgqdwnSF8pc1qAADv
+User connected: e5JOJc-4eCDeDtV1AADx
+User connected: DaEZd7UzOKjYjiQUAADz
+User connected: F4I7pomh5chTDkroAAD1
+User connected: 32uSD_tdemc2yQvpAAD3
+User connected: JpgQ_rhy2PE_MCvjAAD5
+User connected: kozPbQRCPGOOhM6nAAD7
+User connected: OAgiWzPLkogTVEJHAAD9
+User connected: VvGlW53expst0P7mAAD_
+User connected: QHGEIfRbkhy7rDX1AAEB
+User connected: oglS75C0o7OpId4TAAED
+User connected: KtWygoD0ekkuy3y2AAEF
+User connected: 7ikzao8j-KZIR3oUAAEH
+User connected: NxjjWyczKlkmrND4AAEJ
+User connected: TV6ViT0hoiuE6IEhAAEL
+User connected: fcGNK245iKZwpQn1AAEN
+User connected: JQ8eS5aYySSEify7AAEP
+User connected: vUTd8r02bDZBc6r6AAER
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: eHxqdNtaXLvyTkbnAAAB
+User connected: NEcUSryxyXpzNGbbAAAD
+User connected: E0Hk9LFN0Lhvjd5iAAAF
+User connected: aGWM9yVw21l6VkneAAAH
+User connected: bUw0XD7NrbQDX2moAAAJ
+User connected: NENBE_ZqLo_7TrZSAAAL
+User connected: Su4Hz21DSTdB3zTnAAAO
+User connected: OqKxD4ZMTYrEZR-PAAAQ
+User connected: GTMHiZfTayaBoieLAAAS
+User connected: CBVsmbuEd2KuKBW0AAAW
+User connected: w6sgKOPUxRKCUV1JAAAX
+User connected: tSwm2s54y_LXHUV1AAAY
+User connected: 9ol0J9BsN_Cp1RbtAAAa
+User connected: TilEJP8Ab9WFf3iEAAAe
+User connected: o9A95FtmoEUI_wFQAAAf
+User connected: CJdTarCKvsZKEBk_AAAg
+User connected: Z7iProVDYKkf8Wf9AAAi
+User connected: v57Qpd8nv4NvvV1PAAAm
+User connected: 8lwQ6aSVX6BOXUNbAAAn
+User connected: 6Gu6E7EW9gsex0uOAAAo
+User connected: 8K9h6OxCTx8an7pKAAAq
+User connected: Zjpy6jAeSUpCm6wNAAAu
+User connected: qTU8hLsbfT2uoP2FAAAv
+User connected: G6Sj-l_L9cTzeiEaAAAw
+User connected: FoGigQtdfneHH5k4AAAy
+User connected: aBCMPoLTEP6lLg9fAAA0
+User connected: Crtw39Sc1Y9LcaksAAA4
+User connected: aG42Sl8iLeyBDr7iAAA5
+User connected: VENdOgJikJgZ7_o6AAA6
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: JHxdBF6UiY_xfW5dAAAB
+User connected: iDZVmHe05zhneGExAAAF
+User connected: afIIxm5Nl8IHIwJ3AAAG
+User connected: f5YjuGALxSPUBuWPAAAH
+User connected: UXm8UpCU6ytzj6WRAAAJ
+User connected: Pkh9bcDfKTr95vyNAAAN
+User connected: rGpVmBI0Pm_PKQU_AAAO
+User connected: oEAjm1MqxvzczpGgAAAP
+User connected: nXEv2Ov2JM1Q8K_8AAAR
+User connected: E35vasQSs8X0AV54AAAV
+User connected: xzqlW260aw0g8ivFAAAW
+User connected: GvHdpBhXS8yNVNwaAAAX
+User connected: IWvHndouNdPSnkvqAAAZ
+User connected: brjldGBy4A6dxpEjAAAd
+User connected: y5DTRj_yFYOYVK_NAAAe
+User connected: KV6j65BmD8y7iuHbAAAf
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+Server listening on 0.0.0.0:3001
+User connected: 76Eve0bFpvMfdtzdAAAB
+User connected: vJIXmA6EHPlJUFLvAAAF
+User connected: ZM3Pm-8iTvWX_v-zAAAG
+User connected: hi8XbWQAb2DTRDntAAAH
+User connected: lCfJZW7j6xinUOp0AAAJ
+User connected: NV7ovoZICVqqOjRZAAAN
+User connected: URte6UyvlojOUs87AAAO
+User connected: -ZAf2JYG5mytXoWqAAAP
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting child process[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+node:events:502
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: read EIO
+    at TTY.onStreamRead (node:internal/stream_base_commons:218:20)
+Emitted 'error' event on ReadStream instance at:
+    at emitErrorNT (node:internal/streams/destroy:169:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:128:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  errno: -5,
+  code: 'EIO',
+  syscall: 'read'
+}
+
+Node.js v20.20.0

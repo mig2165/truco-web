@@ -1,0 +1,429 @@
+.room-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: var(--bg-table);
+    position: relative;
+    overflow: hidden;
+}
+
+.room-container.center {
+    justify-content: center;
+    align-items: center;
+}
+
+.error-panel {
+    padding: 3rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.error-panel h2 {
+    color: var(--danger);
+    font-size: 1.5rem;
+}
+
+.room-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    margin: 1rem;
+    z-index: 10;
+    border-radius: 12px;
+}
+
+.header-left,
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+}
+
+.header-right {
+    justify-content: flex-end;
+}
+
+.header-center {
+    flex: 2;
+    text-align: center;
+}
+
+.header-center h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.room-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.room-badge strong {
+    color: var(--accent);
+    letter-spacing: 1px;
+}
+
+.points-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.points-badge .team1 {
+    color: #3b82f6;
+}
+
+.points-badge .team2 {
+    color: #ef4444;
+}
+
+.points-badge .divider {
+    color: var(--table-border);
+}
+
+.icon-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-primary);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.game-area {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    padding: 2rem;
+}
+
+.waiting-lobby {
+    width: 100%;
+    max-width: 500px;
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.lobby-icon {
+    color: var(--accent);
+    margin-bottom: -0.5rem;
+}
+
+.player-list {
+    width: 100%;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.player-list li {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--table-border);
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.player-list li.empty-slot {
+    color: var(--text-secondary);
+    font-style: italic;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.1);
+    border: 1px dashed var(--table-border);
+}
+
+.player-num {
+    background: var(--accent);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: bold;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.player-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.team-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.team-1 {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+}
+
+.team-2 {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.start-btn {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.1rem;
+}
+
+.hint {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-style: italic;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Team Picker Screen */
+.team-picker {
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    max-width: 420px;
+    width: 100%;
+}
+
+.team-picker h2 {
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #fff, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.team-picker .subtitle {
+    color: var(--text-secondary);
+}
+
+.team-options {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+}
+
+.team-btn {
+    flex: 1;
+    padding: 1.25rem;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    font-size: 1.1rem;
+    font-weight: 700;
+    transition: all 0.2s;
+}
+
+.team-1-btn {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.team-1-btn:hover {
+    background: rgba(59, 130, 246, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
+}
+
+.team-2-btn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.team-2-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(239, 68, 68, 0.2);
+}
+
+/* Teams Grid in Waiting Lobby */
+.teams-grid {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    width: 100%;
+}
+
+.team-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-radius: 12px;
+}
+
+.team-1-col {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.team-2-col {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.team-col-header {
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.player-pill.empty {
+    color: var(--text-secondary);
+    font-style: italic;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    background: transparent;
+    font-size: 0.8rem;
+}
+
+.player-avatar-sm {
+    background: var(--accent);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.vs-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    font-weight: 900;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+/* Room Invite Code */
+.room-invite {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+}
+
+.room-invite p {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.invite-code {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px dashed rgba(59, 130, 246, 0.3);
+    transition: all 0.2s;
+}
+
+.invite-code:hover {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+/* Copy button in header badge */
+.copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.copy-btn:hover {
+    background: rgba(59, 130, 246, 0.15);
+}

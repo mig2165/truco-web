@@ -1,0 +1,727 @@
+.game-table-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ── Player Menu ─────────────────────────────────────── */
+.menu-trigger {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    color: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.menu-trigger:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-menu {
+    position: relative;
+    padding: 2rem;
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+}
+
+.menu-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.menu-close:hover {
+    color: white;
+}
+
+.menu-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.menu-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: white;
+}
+
+.menu-team {
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+
+.menu-score {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: white;
+    font-size: 0.85rem;
+}
+
+.leave-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+}
+
+/* ── Table Felt ──────────────────────────────────────── */
+.table-felt {
+    position: relative;
+    width: 88vw;
+    max-width: 960px;
+    height: 68vh;
+    max-height: 680px;
+    background: radial-gradient(circle at center, #166534 0%, #14532d 100%);
+    border: 12px solid #451a03;
+    border-radius: 200px;
+    box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5), 0 20px 50px rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ── Call Banner ─────────────────────────────────────── */
+.call-banner {
+    position: absolute;
+    top: 8%;
+    z-index: 100;
+    padding: 1.2rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+    animation: slideDown 0.3s ease-out;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+}
+
+.call-banner h3 {
+    color: #fbbf24;
+    font-size: 1.3rem;
+}
+
+.call-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* ── Trick Result Overlay ────────────────────────────── */
+.trick-result-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 90;
+    pointer-events: none;
+}
+
+.trick-result-banner {
+    background: rgba(0, 0, 0, 0.82);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 14px;
+    padding: 1rem 2rem;
+    color: white;
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    animation: popIn 0.3s ease-out;
+}
+
+.trick-score {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    font-weight: 400;
+}
+
+.next-turn-hint {
+    font-size: 0.85rem;
+    color: #10b981;
+    margin-top: 2px;
+}
+
+/* ── Playing Cards ───────────────────────────────────── */
+.playing-card {
+    width: 68px;
+    height: 98px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    user-select: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #e2e8f0;
+}
+
+.playing-card.back {
+    background: #1e293b;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.card-pattern {
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+    background: repeating-linear-gradient(45deg, #0f172a 0, #0f172a 5px, rgba(255, 255, 255, 0.1) 5px, rgba(255, 255, 255, 0.1) 10px);
+}
+
+.card-value {
+    position: absolute;
+    top: 4px;
+    left: 6px;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.card-suit {
+    font-size: 2.2rem;
+}
+
+.red {
+    color: #ef4444;
+}
+
+.black {
+    color: #0f172a;
+}
+
+.playable {
+    cursor: pointer;
+}
+
+.playable:hover {
+    transform: translateY(-12px) scale(1.07);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+}
+
+.manilha-glow {
+    box-shadow: 0 0 14px #fbbf24, 0 0 28px rgba(251, 191, 36, 0.35);
+    border-color: #fbbf24 !important;
+}
+
+/* ── Player Positions ────────────────────────────────── */
+.player-position {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: box-shadow 0.3s;
+}
+
+.partner-info {
+    border: 1px solid rgba(99, 202, 183, 0.5);
+}
+
+.turn-pulse {
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.6);
+    animation: turnGlow 1s infinite alternate;
+}
+
+.player-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+}
+
+.avatar-lg {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+}
+
+.team-avatar-1 {
+    background: #3b82f6;
+}
+
+.team-avatar-2 {
+    background: #ef4444;
+}
+
+.team-tag {
+    font-size: 0.7rem;
+    opacity: 0.85;
+}
+
+.team-1 {
+    color: #93c5fd;
+}
+
+.team-2 {
+    color: #fca5a5;
+}
+
+.partner-badge {
+    background: rgba(99, 202, 183, 0.2);
+    border: 1px solid rgba(99, 202, 183, 0.4);
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 0.65rem;
+    color: #6ecab7;
+}
+
+.you-tag {
+    opacity: 0.7;
+    font-size: 0.75rem;
+}
+
+.thinking-dots {
+    color: #fbbf24;
+    animation: blink 1s infinite;
+    font-size: 1rem;
+}
+
+.player-notification-bubble {
+    position: absolute;
+    top: -45px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    color: black;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 50;
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.player-notification-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px 6px 0;
+    border-style: solid;
+    border-color: white transparent transparent transparent;
+}
+
+@keyframes popIn {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.8) translateY(10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) scale(1) translateY(0);
+    }
+}
+
+.my-info .player-notification-bubble {
+    top: -60px;
+    /* Adjust height for own player so it doesn't block cards */
+}
+
+/* ── Hands ───────────────────────────────────────────── */
+.player-hand {
+    display: flex;
+    gap: 0;
+}
+
+.player-hand>* {
+    margin-left: -18px;
+}
+
+.player-hand>*:first-child {
+    margin-left: 0;
+}
+
+.vertical {
+    flex-direction: column;
+}
+
+.vertical>* {
+    margin-left: 0 !important;
+    margin-top: -55px;
+}
+
+.vertical>*:first-child {
+    margin-top: 0;
+}
+
+.my-hand {
+    transform: scale(1.15);
+    margin-bottom: 0.5rem;
+}
+
+.my-hand .playing-card {
+    width: 76px;
+    height: 108px;
+}
+
+.my-hand .card-value {
+    font-size: 1.4rem;
+}
+
+.my-hand .card-suit {
+    font-size: 2.8rem;
+}
+
+/* ── Positions ───────────────────────────────────────── */
+.position-top {
+    top: 16px;
+    flex-direction: column;
+}
+
+.position-bottom {
+    bottom: -10px;
+    z-index: 50;
+    flex-direction: column-reverse;
+}
+
+.position-left {
+    left: 36px;
+    flex-direction: row;
+}
+
+.position-right {
+    right: 36px;
+    flex-direction: row-reverse;
+}
+
+.my-info {
+    border: 1px solid var(--accent);
+}
+
+.turn-indicator {
+    color: #10b981;
+    font-weight: bold;
+    animation: pulse 1s infinite;
+}
+
+/* ── Table Center ────────────────────────────────────── */
+.table-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 280px;
+    height: 280px;
+    position: relative;
+}
+
+.vira-container {
+    position: absolute;
+    top: -35px;
+    right: -60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.vira-label {
+    color: #fbbf24;
+    font-weight: bold;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.manilha-hint {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.7rem;
+    margin-top: 2px;
+}
+
+/* ── Played Cards (center positions) ─────────────────── */
+.played-cards-area {
+    position: relative;
+    width: 160px;
+    height: 160px;
+}
+
+.played-card-slot {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.played-bottom {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4;
+}
+
+.played-top {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+}
+
+.played-left {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+}
+
+.played-right {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+}
+
+.played-by-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    white-space: nowrap;
+}
+
+.played-by-label.team-1 {
+    color: #93c5fd;
+}
+
+.played-by-label.team-2 {
+    color: #fca5a5;
+}
+
+/* ── Round/Game End ──────────────────────────────────── */
+.round-result {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 1rem 2rem;
+    border-radius: 10px;
+    font-size: 1.3rem;
+    font-weight: bold;
+    z-index: 20;
+    text-align: center;
+    animation: popIn 0.4s ease-out;
+}
+
+.game-end {
+    font-size: 1.7rem;
+    border: 2px solid gold;
+}
+
+/* ── Action Buttons ──────────────────────────────────── */
+.mao-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: absolute;
+    top: -90px;
+    /* Above the cards, high up */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 12px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    position: absolute;
+    bottom: 0;
+    right: -150px;
+}
+
+.btn-truco {
+    background: linear-gradient(135deg, #f97316, #dc2626);
+    color: white;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+}
+
+.btn-truco:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 18px rgba(220, 38, 38, 0.6);
+}
+
+.truco-hint {
+    position: absolute;
+    bottom: -22px;
+    right: -10px;
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+}
+
+.btn-danger {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+/* ── Animations ──────────────────────────────────────── */
+@keyframes slideDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes popIn {
+    from {
+        transform: translate(-50%, -50%) scale(0.7);
+        opacity: 0;
+    }
+
+    to {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes turnGlow {
+    from {
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+    }
+
+    to {
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.8);
+    }
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}

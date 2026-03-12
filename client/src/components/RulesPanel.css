@@ -1,0 +1,146 @@
+/* ── Rules Panel ─────────────────────────────────────── */
+.rules-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.rules-panel {
+    position: relative;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 2rem;
+    background: rgba(15, 23, 42, 0.97);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    animation: scaleIn 0.25s ease-out;
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0.92);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.rules-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    padding: 4px;
+    transition: color 0.15s;
+}
+
+.rules-close:hover {
+    color: white;
+}
+
+.rules-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: white;
+    margin-bottom: 1.2rem;
+}
+
+.rules-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.rules-section {
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rules-section h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fbbf24;
+    margin-bottom: 0.6rem;
+}
+
+.rules-section h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #a78bfa;
+    margin-top: 0.6rem;
+    margin-bottom: 0.3rem;
+}
+
+.rules-section p {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+}
+
+.rules-section ul {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.85rem;
+    padding-left: 1.2rem;
+    list-style-type: disc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    line-height: 1.5;
+}
+
+.rules-section ul ul {
+    margin-top: 4px;
+    padding-left: 1rem;
+}
+
+.rank-list {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #10b981;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 8px 14px;
+    border-radius: 8px;
+    text-align: center;
+    letter-spacing: 1px;
+    margin-top: 4px;
+}
+
+/* Scrollbar styling */
+.rules-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.rules-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.rules-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
