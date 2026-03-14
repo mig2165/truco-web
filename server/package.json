@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "nodemon --stdin=false src/index.ts",
+    "dev": "nodemon src/index.ts",
     "build": "tsc"
   },
   "keywords": [],
