@@ -36,6 +36,8 @@ export type DevState = {
 
 export interface GameState {
     roomId: string;
+    hostPlayerId: string | null;
+    hostPlayerName: string | null;
     players: Player[];
     deck: Card[];
     vira: Card | null;
@@ -47,6 +49,7 @@ export interface GameState {
     table: { playerIndex: number; card: Card }[];
     startingPlayerIndex: number;
     status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';
+    winnerTeam?: number | null;
     callState: {
         type: 'truco' | 'double' | 'triple' | 'mao_baixa' | 'mao_real' | null;
         callingTeam: number | null;
