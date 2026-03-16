@@ -9,6 +9,20 @@ import { RulesPanel } from './RulesPanel';
 import { DevPanel } from './DevPanel';
 import { ChangelogLauncher } from './ChangelogLauncher';
 
+type RoomPreviewPlayer = {
+    id: string;
+    name: string;
+    team: number;
+    isBot?: boolean;
+};
+
+type RoomPreviewState = {
+    roomId: string;
+    status: string;
+    dev?: { enabled?: boolean };
+    players: RoomPreviewPlayer[];
+};
+
 export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
     const location = useLocation();
@@ -16,8 +30,11 @@ export const Room: React.FC = () => {
     const { socket } = useSocket();
 
     const [gameState, setGameState] = useState<any>(null);
+    const [roomPreview, setRoomPreview] = useState<RoomPreviewState | null>(null);
     const [error, setError] = useState('');
     const [teamPick, setTeamPick] = useState<null | 1 | 2>(null);
+    const [joinInFlight, setJoinInFlight] = useState(false);
+    const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
 
@@ -34,13 +51,54 @@ export const Room: React.FC = () => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
 
-    // Join the room only ONCE when team has been chosen
+    // Start listening before the user joins so we can render the team picker with live room data.
     useEffect(() => {
-        if (!socket || !roomId || !teamPick) return;
+        if (!socket || !roomId) return;
 
-        // Attach listeners every mount
-        const onStateUpdate = (state: any) => setGameState(state);
-        const onError = (msg: string) => setError(msg);
+        const onStateUpdate = (state: any) => {
+            setGameState(state);
+            setRoomPreview({
+                roomId: state.roomId,
+                status: state.status,
+                dev: state.dev,
+                players: state.players.map((player: any) => ({
+                    id: player.id,
+                    name: player.name,
+                    team: player.team,
+                    isBot: player.isBot
+                }))
+            });
+
+            // Once the server echoes us back in the roster, we know the join actually stuck.
+            if (state.players.some((player: any) => player.id === socket.id)) {
+                hasJoined.current = true;
+                setJoinedRoom(true);
+                setJoinInFlight(false);
+            }
+        };
+        const onRoomPreview = (preview: RoomPreviewState) => setRoomPreview(preview);
+        const onError = (msg: string) => {
+            setJoinInFlight(false);
+
+            // Full-room failures should surface as an explicit prompt, then bounce back to the lobby.
+            if (msg === 'Game full!') {
+                window.alert('Game full!');
+                navigate('/');
+                return;
+            }
+
+            // If a seat was taken between preview and click, return the user to the picker and refresh it.
+            if (msg === 'Team 1 is full.' || msg === 'Team 2 is full.') {
+                window.alert(msg);
+                hasJoined.current = false;
+                setJoinedRoom(false);
+                setTeamPick(null);
+                socket.emit('getRoomPreview', roomId);
+                return;
+            }
+
+            setError(msg);
+        };
         const onChat = (msg: any) => {
             setChatMessages(prev => [...prev, msg]);
             // If chat panel is closed, increment unread
@@ -51,21 +109,32 @@ export const Room: React.FC = () => {
         };
 
         socket.on('gameStateUpdate', onStateUpdate);
+        socket.on('roomPreview', onRoomPreview);
         socket.on('error', onError);
         socket.on('chatMessage', onChat);
-
-        // Only emit joinRoom once
-        if (!hasJoined.current) {
-            hasJoined.current = true;
-            socket.emit('joinRoom', roomId, playerName, teamPick);
-        }
+        socket.emit('getRoomPreview', roomId);
 
         return () => {
             socket.off('gameStateUpdate', onStateUpdate);
+            socket.off('roomPreview', onRoomPreview);
             socket.off('error', onError);
             socket.off('chatMessage', onChat);
         };
-    }, [socket, roomId, playerName, teamPick]);
+    }, [socket, roomId, navigate]);
+
+    // Join the room when the user actually clicks a team card.
+    useEffect(() => {
+        if (!socket || !roomId || !teamPick || joinInFlight || joinedRoom || hasJoined.current) return;
+
+        if ((roomPreview?.players.length ?? 0) >= 4) {
+            window.alert('Game full!');
+            navigate('/');
+            return;
+        }
+
+        setJoinInFlight(true);
+        socket.emit('joinRoom', roomId, playerName, teamPick);
+    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
 
     const handleLeave = () => {
         navigate('/');
@@ -78,6 +147,48 @@ export const Room: React.FC = () => {
             setTimeout(() => setCopied(false), 2000);
         }
     };
+
+    const handleTeamSelection = (team: 1 | 2) => {
+        // Keep the click path explicit so users get a prompt instead of a dead button.
+        if (roomIsFull) {
+            window.alert('Game full!');
+            navigate('/');
+            return;
+        }
+
+        if (team === 1 && team1IsFull) {
+            window.alert('Team 1 is full.');
+            return;
+        }
+
+        if (team === 2 && team2IsFull) {
+            window.alert('Team 2 is full.');
+            return;
+        }
+
+        setTeamPick(team);
+    };
+
+    const previewPlayers = roomPreview?.players ?? [];
+    const team1PreviewPlayers = previewPlayers.filter((player) => player.team === 1);
+    const team2PreviewPlayers = previewPlayers.filter((player) => player.team === 2);
+    const roomIsFull = previewPlayers.length >= 4;
+    const team1IsFull = team1PreviewPlayers.length >= 2;
+    const team2IsFull = team2PreviewPlayers.length >= 2;
+
+    const renderPickerSlots = (players: RoomPreviewPlayer[], team: 1 | 2) => (
+        <>
+            {players.map((player) => (
+                <div key={player.id} className="player-pill">
+                    <span className="player-avatar-sm">{player.name[0]}</span>
+                    {player.name}
+                </div>
+            ))}
+            {Array.from({ length: Math.max(0, 2 - players.length) }).map((_, index) => (
+                <div key={`${team}-open-${index}`} className="player-pill empty">Open slot...</div>
+            ))}
+        </>
+    );
 
     if (error) {
         return (
@@ -98,10 +209,45 @@ export const Room: React.FC = () => {
                 <div className="team-picker glass-panel">
                     <h2>Pick Your Team</h2>
                     <p className="subtitle">Room: <strong>{roomId}</strong></p>
-                    <div className="team-options">
-                        <button className="team-btn team-1-btn" onClick={() => setTeamPick(1)}>Team 1 🔵</button>
-                        <button className="team-btn team-2-btn" onClick={() => setTeamPick(2)}>Team 2 🔴</button>
+                    <p className={`team-picker-status ${roomIsFull ? 'full' : ''}`}>
+                        {roomIsFull ? 'Game full!' : `${previewPlayers.length}/4 players seated. Click a team to join.`}
+                    </p>
+                    <div className="team-pick-grid">
+                        <button
+                            className="team-seat-card team-1-card"
+                            onClick={() => handleTeamSelection(1)}
+                            disabled={joinInFlight}
+                        >
+                            <div className="team-seat-header">
+                                <span>🔵 Team 1</span>
+                                <span>{team1PreviewPlayers.length}/2</span>
+                            </div>
+                            <div className="team-seat-list">
+                                {renderPickerSlots(team1PreviewPlayers, 1)}
+                            </div>
+                            <span className="team-seat-action">
+                                {team1IsFull ? 'Team 1 full' : 'Click to join Team 1'}
+                            </span>
+                        </button>
+
+                        <button
+                            className="team-seat-card team-2-card"
+                            onClick={() => handleTeamSelection(2)}
+                            disabled={joinInFlight}
+                        >
+                            <div className="team-seat-header">
+                                <span>🔴 Team 2</span>
+                                <span>{team2PreviewPlayers.length}/2</span>
+                            </div>
+                            <div className="team-seat-list">
+                                {renderPickerSlots(team2PreviewPlayers, 2)}
+                            </div>
+                            <span className="team-seat-action">
+                                {team2IsFull ? 'Team 2 full' : 'Click to join Team 2'}
+                            </span>
+                        </button>
                     </div>
+                    {roomIsFull && <p className="team-picker-warning">All four seats are already taken.</p>}
                     <ChangelogLauncher
                         className="btn changelog-update-btn team-picker-changelog-btn"
                         label="UPDATE! View changelog"

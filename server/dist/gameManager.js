@@ -20,6 +20,7 @@ class TrucoGameManager {
         socket.on('createRoom', (payload, callback) => {
             this.createRoom(socket, payload, callback);
         });
+        socket.on('getRoomPreview', (roomId) => this.sendRoomPreview(socket, roomId));
         socket.on('joinRoom', (roomId, playerName, chosenTeam) => this.joinRoom(socket, roomId, playerName, chosenTeam));
         socket.on('playCard', (roomId, cardIndex) => this.handlePlayCard(socket, roomId, cardIndex));
         socket.on('call', (roomId, callType) => this.handleCall(socket, roomId, callType));
@@ -127,21 +128,25 @@ class TrucoGameManager {
             return;
         }
         if (state.players.length >= 4) {
-            socket.emit('error', 'This room is already full.');
+            socket.emit('error', 'Game full!');
             return;
         }
-        let team = chosenTeam;
         const team1Count = state.players.filter((player) => player.team === 1).length;
         const team2Count = state.players.filter((player) => player.team === 2).length;
-        if (chosenTeam === 1 && team1Count >= 2)
-            team = 2;
-        if (chosenTeam === 2 && team2Count >= 2)
-            team = 1;
+        // Keep team selection explicit so the UI can behave like a true seat picker.
+        if (chosenTeam === 1 && team1Count >= 2) {
+            socket.emit('error', 'Team 1 is full.');
+            return;
+        }
+        if (chosenTeam === 2 && team2Count >= 2) {
+            socket.emit('error', 'Team 2 is full.');
+            return;
+        }
         state.players.push({
             id: socket.id,
             name: playerName,
             hand: [],
-            team,
+            team: chosenTeam,
             isBot: false,
             exposedHand: false,
             maoBaixaReady: false
@@ -153,6 +158,22 @@ class TrucoGameManager {
         else {
             this.emitState(state);
         }
+    }
+    sendRoomPreview(socket, roomId) {
+        const state = this.rooms.get(roomId) ?? this.createEmptyState(roomId);
+        // Preview payload stays lightweight and only exposes the waiting-room data
+        // needed to render team rosters before a player commits to joining.
+        socket.emit('roomPreview', {
+            roomId: state.roomId,
+            status: state.status,
+            dev: state.dev,
+            players: state.players.map((player) => ({
+                id: player.id,
+                name: player.name,
+                team: player.team,
+                isBot: player.isBot
+            }))
+        });
     }
     joinDevRoom(state, socket, playerName) {
         const humanPlayers = state.players.filter((player) => !player.isBot);
