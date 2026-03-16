@@ -30,6 +30,30 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* ── Report Issue Button ─────────────────────────────── */
+.report-trigger {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    color: #fbbf24;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.report-trigger:hover {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.3);
+}
+
 .menu-overlay {
     position: fixed;
     inset: 0;
