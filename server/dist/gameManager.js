@@ -2,11 +2,15 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TrucoGameManager = void 0;
 const gameLogic_1 = require("./gameLogic");
+const bugReport_1 = require("./bugReport");
 class TrucoGameManager {
     rooms = new Map();
     io;
     constructor(io) {
         this.io = io;
+    }
+    getGameState(roomId) {
+        return this.rooms.get(roomId);
     }
     handleConnection(socket) {
         socket.on('createRoom', (playerName, callback) => {
@@ -16,6 +20,13 @@ class TrucoGameManager {
         socket.on('joinRoom', (roomId, playerName, chosenTeam) => this.joinRoom(socket, roomId, playerName, chosenTeam));
         socket.on('playCard', (roomId, cardIndex) => this.handlePlayCard(socket, roomId, cardIndex));
         socket.on('call', (roomId, callType) => this.handleCall(socket, roomId, callType));
+        socket.on('debugSetScore', (roomId, score) => {
+            const state = this.rooms.get(roomId);
+            if (state) {
+                state.points = score;
+                this.emitState(state);
+            }
+        });
     }
     addNotification(state, message, team) {
         // Ephemeral: clear old notifications before adding new one
@@ -88,12 +99,6 @@ class TrucoGameManager {
         this.startNewRound(state);
     }
     startNewRound(state) {
-        // Guard: if score already past 11 (e.g. from +3 Mão de Onze), end game
-        if (state.points.team1 > 11 || state.points.team2 > 11) {
-            state.status = 'game_end';
-            this.emitState(state);
-            return;
-        }
         state.deck = (0, gameLogic_1.shuffleDeck)((0, gameLogic_1.createDeck)());
         state.vira = state.deck.pop();
         state.manilhaRank = (0, gameLogic_1.getManilhaRank)(state.vira.rank);
@@ -119,8 +124,8 @@ class TrucoGameManager {
         state.maoDeFerroActive = false;
         state.currentTurnIndex = state.startingPlayerIndex;
         state.notifications = [];
-        // Check for Mão de Ferro (11-11)
-        if (state.points.team1 === 11 && state.points.team2 === 11) {
+        // Check for Mão de Ferro (both teams at 11 or more)
+        if (state.points.team1 >= 11 && state.points.team2 >= 11) {
             state._phase = 'MAO_DE_FERRO';
             state.maoDeFerroActive = true;
             // Skip straight to trick phase — no calls, no hand choosing, blind play
@@ -129,11 +134,18 @@ class TrucoGameManager {
             state._phase = 'TRICK_PHASE';
             this.addNotification(state, '🔥 MÃO DE FERRO! All cards hidden. Winner takes the game!', 0);
             this.emitState(state);
+            this.autoPlayMaoDeFerro(state);
             return;
         }
-        // Check for Mão de Onze (exactly one team at 11)
-        const team1Has11 = state.points.team1 === 11;
-        const team2Has11 = state.points.team2 === 11;
+        // Check for game end (12+), unless both teams are 11+ (Mão de Ferro takes priority)
+        if (state.points.team1 >= 12 || state.points.team2 >= 12) {
+            state.status = 'game_end';
+            this.emitState(state);
+            return;
+        }
+        // Check for Mão de Onze (exactly one team at 11 or more)
+        const team1Has11 = state.points.team1 >= 11;
+        const team2Has11 = state.points.team2 >= 11;
         if (team1Has11 || team2Has11) {
             const onzeTeam = team1Has11 ? 1 : 2;
             state._phase = 'MAO_DE_ONZE_DECISION';
@@ -144,6 +156,7 @@ class TrucoGameManager {
         }
         // Normal round
         state._phase = 'WAITING_FOR_HAND_PHASE';
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, 'New round started');
         this.emitState(state);
     }
     handleCall(socket, roomId, callType) {
@@ -162,6 +175,7 @@ class TrucoGameManager {
             if (callType === 'mao_de_onze_run') {
                 // RUN: opponents get +1 point, round ends
                 const opponentTeam = state.maoDeOnzeTeam === 1 ? 2 : 1;
+                bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called mao_de_onze_run`);
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} runs from Mão de Onze!`, player.team);
                 state.maoDeOnzeTeam = null;
                 // Award 1 point directly (not roundPoints)
@@ -181,6 +195,7 @@ class TrucoGameManager {
             if (callType === 'mao_de_onze_play') {
                 // PLAY: proceed with the hand, 3 pts to opponent on loss
                 state.maoDeOnzeActive = true;
+                bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called mao_de_onze_play`);
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} accepts Mão de Onze!`, player.team);
                 // Transition normally into the hand phase so players can keep/call Mao/Baixa
                 state._phase = 'WAITING_FOR_HAND_PHASE';
@@ -201,6 +216,7 @@ class TrucoGameManager {
                 if (caller.team === player.team)
                     return; // Only opponents respond
                 if (callType === 'call_bluff') {
+                    bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called call_bluff`);
                     this.addNotification(state, `${player.name} challenges the call! Revealing hand...`, player.team);
                     // --- REVEAL PHASE ---
                     caller.exposedHand = true;
@@ -208,78 +224,71 @@ class TrucoGameManager {
                     this.emitState(state);
                     setTimeout(() => {
                         const isTruth = this.evaluateMaoTruth(caller, state._maoType);
+                        const winTeam = isTruth ? caller.team : player.team;
                         if (isTruth) {
                             this.addNotification(state, `Call was TRUE! Team ${caller.team} gets 1 point.`, caller.team);
-                            // Scenario A: True call + called out → caller's team +1, switch hands, re-choose
                             this.awardPoints(state, caller.team, 1);
-                            if (state.points.team1 >= 11 || state.points.team2 >= 11) {
-                                state.status = 'round_end';
-                                state._phase = 'ROUND_END';
-                                state._maoActive = false;
-                                this.emitState(state);
-                                setTimeout(() => {
-                                    state.startingPlayerIndex = callerIndex;
-                                    this.startNewRound(state);
-                                }, 3000);
-                                return;
-                            }
-                            if (state.deck.length >= 3) {
-                                caller.hand = (0, gameLogic_1.setManilhas)([state.deck.pop(), state.deck.pop(), state.deck.pop()], state.manilhaRank);
-                                caller.maoBaixaReady = false; // Re-choose with new cards
-                            }
-                            else {
-                                caller.maoBaixaReady = true; // No cards to switch, mark as done
-                            }
-                            // Hide the new hand again
-                            caller.exposedHand = false;
-                            state.currentTurnIndex = callerIndex;
-                            state.startingPlayerIndex = callerIndex; // Caller starts next
-                            // Caller gets to choose again with new cards (or stays ready if deck empty)
-                            state._maoActive = false;
-                            state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
-                            state._phase = 'WAITING_FOR_HAND_PHASE';
-                            if (state.players.every(p => p.maoBaixaReady)) {
-                                state._phase = 'TRICK_PHASE';
-                            }
-                            state.notifications = [];
-                            this.emitState(state);
-                            return;
                         }
                         else {
                             this.addNotification(state, `Call was FALSE! Team ${player.team} gets 1 point.`, player.team);
-                            // Scenario B: Bluff + called out → opposing team +1, hand remains revealed
                             this.awardPoints(state, player.team, 1);
-                            if (state.points.team1 >= 11 || state.points.team2 >= 11) {
-                                state.status = 'round_end';
-                                state._phase = 'ROUND_END';
-                                state._maoActive = false;
-                                this.emitState(state);
-                                setTimeout(() => {
-                                    state.startingPlayerIndex = playerIndex;
-                                    this.startNewRound(state);
-                                }, 3000);
-                                return;
-                            }
-                            // Hand remains exposed (caller.exposedHand is already true from the reveal phase)
-                            // Caller does NOT switch cards
-                            state.currentTurnIndex = playerIndex;
-                            state.startingPlayerIndex = playerIndex; // Challenger starts next
+                        }
+                        // If scores are 11-11 (or higher), jump to Mão de Ferro
+                        const bothAtEleven = state.points.team1 >= 11 && state.points.team2 >= 11;
+                        if (bothAtEleven) {
+                            state.status = 'round_end';
+                            state._phase = 'ROUND_END';
                             state._maoActive = false;
-                            caller.maoBaixaReady = true; // Bluff caught, caller choice is forced to 'keep'
+                            state._maoType = undefined;
+                            state._maoCallerId = undefined;
                             state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
-                            state._phase = 'WAITING_FOR_HAND_PHASE';
-                            if (state.players.every(p => p.maoBaixaReady)) {
-                                state._phase = 'TRICK_PHASE';
-                            }
-                            state.notifications = [];
+                            caller.exposedHand = false;
                             this.emitState(state);
+                            setTimeout(() => {
+                                const winnerIdx = state.players.findIndex(p => p.team === winTeam);
+                                state.startingPlayerIndex = winnerIdx >= 0 ? winnerIdx : (state.startingPlayerIndex + 1) % 4;
+                                this.startNewRound(state);
+                            }, 3000);
                             return;
                         }
+                        // If someone hits 12+ (and it's not 11-11), they win immediately
+                        const team1Wins = state.points.team1 >= 12;
+                        const team2Wins = state.points.team2 >= 12;
+                        if (team1Wins || team2Wins) {
+                            state.status = 'round_end';
+                            state._phase = 'ROUND_END';
+                            state._maoActive = false;
+                            state._maoType = undefined;
+                            state._maoCallerId = undefined;
+                            state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
+                            caller.exposedHand = false;
+                            this.emitState(state);
+                            setTimeout(() => {
+                                state.status = 'game_end';
+                                this.emitState(state);
+                            }, 3000);
+                            return;
+                        }
+                        // Otherwise, keep playing the round, but make it worth 3 points
+                        state.roundPoints = Math.max(state.roundPoints, 3);
+                        state._maoActive = false;
+                        state._maoType = undefined;
+                        state._maoCallerId = undefined;
+                        state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
+                        caller.exposedHand = false;
+                        if (state.players.every(p => p.maoBaixaReady)) {
+                            state._phase = 'TRICK_PHASE';
+                        }
+                        else {
+                            state._phase = 'WAITING_FOR_HAND_PHASE';
+                        }
+                        this.emitState(state);
                     }, 3000);
                     return; // Return immediately to block standard emitState until setTimeout fires
                 }
                 else if (callType === 'accept') {
                     // Scenarios C & D: Switch allowed → NO points awarded regardless of truth
+                    bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} accepted`);
                     this.addNotification(state, `${player.name} allows the switch!`, player.team);
                     if (state.deck.length >= 3) {
                         caller.hand = (0, gameLogic_1.setManilhas)([state.deck.pop(), state.deck.pop(), state.deck.pop()], state.manilhaRank);
@@ -312,6 +321,7 @@ class TrucoGameManager {
                 if (player.maoBaixaReady)
                     return;
                 player.maoBaixaReady = true;
+                bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called keep_hand`);
                 this.addNotification(state, `${player.name} keeps hand`, player.team);
                 if (state.players.every(p => p.maoBaixaReady)) {
                     state._phase = 'TRICK_PHASE';
@@ -323,6 +333,7 @@ class TrucoGameManager {
                 if (player.maoBaixaReady)
                     return; // Already made their choice
                 const friendlyName = callType === 'mao_baixa' ? 'Mão Baixa' : 'Mão Real';
+                bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called ${callType}`);
                 this.addNotification(state, `${player.name} calls ${friendlyName}!`, player.team);
                 player.maoBaixaReady = true; // They've made their choice
                 state._maoActive = true;
@@ -361,6 +372,7 @@ class TrucoGameManager {
                         callName = 'DOUBLE TRUCO';
                     if (callType === 'triple')
                         callName = 'TRIPLE TRUCO';
+                    bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called ${callType}`);
                     this.addNotification(state, `${player.name} calls ${callName}!`, player.team);
                     state.callState = {
                         type: callType,
@@ -374,6 +386,7 @@ class TrucoGameManager {
             }
             if (state.callState.awaitingResponseFromTeam === player.team) {
                 if (callType === 'accept') {
+                    bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} accepted`);
                     this.addNotification(state, `${player.name} accepts!`, player.team);
                     if (state.callState.type === 'truco')
                         state.roundPoints = 3;
@@ -388,6 +401,7 @@ class TrucoGameManager {
                 }
                 else if (callType === 'decline' || callType === 'fold') {
                     const callingTeam = state.callState.callingTeam;
+                    bugReport_1.bugReportManager.logGameEvent(state.roomId, `Player ${player.name} folded`);
                     this.addNotification(state, `${player.name} folds`, player.team);
                     state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
                     this.endRound(state, callingTeam);
@@ -401,29 +415,9 @@ class TrucoGameManager {
             console.log(`[handlePlayCard] FAILED: No state`);
             return;
         }
-        if (state.status !== 'playing') {
-            console.log(`[handlePlayCard] FAILED: Not playing`);
-            return;
-        }
-        if (state._phase !== 'TRICK_PHASE') {
-            console.log(`[handlePlayCard] FAILED: Not TRICK_PHASE`);
-            return;
-        }
         const playerIndex = state.players.findIndex(p => p.id === socket.id);
         if (playerIndex === -1) {
             console.log(`[handlePlayCard] FAILED: Invalid playerIndex`);
-            return;
-        }
-        if (playerIndex !== state.currentTurnIndex) {
-            console.log(`[handlePlayCard] FAILED: Turn mismatch. Expected ${state.currentTurnIndex}, got ${playerIndex}`);
-            return;
-        }
-        if (state.table.length >= 4) {
-            console.log(`[handlePlayCard] FAILED: Table full`);
-            return;
-        }
-        if (state.callState.awaitingResponseFromTeam !== null) {
-            console.log(`[handlePlayCard] FAILED: Awaiting response`);
             return;
         }
         const player = state.players[playerIndex];
@@ -431,8 +425,38 @@ class TrucoGameManager {
             console.log(`[handlePlayCard] FAILED: Player missing`);
             return;
         }
+        if (state.maoDeFerroActive && player.hand.length === 0) {
+            return;
+        }
+        const indexToPlay = state.maoDeFerroActive
+            ? Math.floor(Math.random() * player.hand.length)
+            : cardIndex;
+        this.playCardByIndex(state, playerIndex, indexToPlay);
+    }
+    playCardByIndex(state, playerIndex, cardIndex) {
+        if (state.status !== 'playing') {
+            return;
+        }
+        if (state._phase !== 'TRICK_PHASE') {
+            return;
+        }
+        if (playerIndex !== state.currentTurnIndex) {
+            return;
+        }
+        if (state.table.length >= 4) {
+            return;
+        }
+        if (state.callState.awaitingResponseFromTeam !== null) {
+            return;
+        }
+        const player = state.players[playerIndex];
+        if (!player) {
+            return;
+        }
+        if (!Number.isFinite(cardIndex)) {
+            return;
+        }
         if (cardIndex < 0 || cardIndex >= player.hand.length) {
-            console.log(`[handlePlayCard] FAILED: Invalid cardIndex ${cardIndex} for hand length ${player.hand.length}`);
             return;
         }
         console.log(`[handlePlayCard] SUCCESS: Player ${playerIndex} played card ${cardIndex}`);
@@ -445,6 +469,32 @@ class TrucoGameManager {
         else {
             this.evaluateTrick(state);
         }
+    }
+    autoPlayMaoDeFerro(state) {
+        const tick = () => {
+            if (!state.maoDeFerroActive)
+                return;
+            if (state.status !== 'playing' || state._phase !== 'TRICK_PHASE')
+                return;
+            if (state.callState.awaitingResponseFromTeam !== null) {
+                setTimeout(tick, 600);
+                return;
+            }
+            if (state.table.length >= 4) {
+                setTimeout(tick, 600);
+                return;
+            }
+            const playerIndex = state.currentTurnIndex;
+            const player = state.players[playerIndex];
+            if (!player || player.hand.length === 0) {
+                setTimeout(tick, 600);
+                return;
+            }
+            const cardIndex = Math.floor(Math.random() * player.hand.length);
+            this.playCardByIndex(state, playerIndex, cardIndex);
+            setTimeout(tick, 600);
+        };
+        setTimeout(tick, 600);
     }
     evaluateTrick(state) {
         let winningEntryIndex = 0;
@@ -470,9 +520,11 @@ class TrucoGameManager {
         state.lastTrickWinnerName = winnerTeamFinal ? winningPlayerName : null;
         const tricksPlayed = 3 - state.players[0].hand.length;
         if (winnerTeamFinal) {
+            bugReport_1.bugReportManager.logGameEvent(state.roomId, `Trick won by Player ${winningPlayerName} (Team ${winnerTeamFinal})`);
             this.addNotification(state, `${winningPlayerName} won the trick!`, winningTeam);
         }
         else {
+            bugReport_1.bugReportManager.logGameEvent(state.roomId, 'Trick tied');
             this.addNotification(state, `Tied trick!`, 0);
         }
         this.emitState(state);
@@ -505,14 +557,16 @@ class TrucoGameManager {
         }
     }
     awardPoints(state, team, amount) {
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, `Team ${team} awarded ${amount} points`);
         if (team === 1) {
-            state.points.team1 = Math.min(state.points.team1 + amount, 11);
+            state.points.team1 = Math.min(state.points.team1 + amount, 12);
         }
         else if (team === 2) {
-            state.points.team2 = Math.min(state.points.team2 + amount, 11);
+            state.points.team2 = Math.min(state.points.team2 + amount, 12);
         }
     }
     endRound(state, winningTeam) {
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}`);
         // Mão de Ferro: winner wins the game immediately
         if (state.maoDeFerroActive) {
             this.addNotification(state, `🏆 Team ${winningTeam} wins MÃO DE FERRO and the GAME!`, winningTeam);

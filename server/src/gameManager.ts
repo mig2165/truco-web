@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { GameState, Card, createDeck, shuffleDeck, getManilhaRank, setManilhas, compareCards, Player } from './gameLogic';
+import { bugReportManager } from './bugReport';
 
 export class TrucoGameManager {
     private rooms: Map<string, GameState> = new Map();
@@ -7,6 +8,10 @@ export class TrucoGameManager {
 
     constructor(io: Server) {
         this.io = io;
+    }
+
+    public getGameState(roomId: string): GameState | undefined {
+        return this.rooms.get(roomId);
     }
 
     public handleConnection(socket: Socket) {
@@ -169,6 +174,7 @@ export class TrucoGameManager {
 
         // Normal round
         state._phase = 'WAITING_FOR_HAND_PHASE';
+        bugReportManager.logGameEvent(state.roomId, 'New round started');
         this.emitState(state);
     }
 
@@ -188,6 +194,7 @@ export class TrucoGameManager {
             if (callType === 'mao_de_onze_run') {
                 // RUN: opponents get +1 point, round ends
                 const opponentTeam = state.maoDeOnzeTeam === 1 ? 2 : 1;
+                bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called mao_de_onze_run`);
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} runs from Mão de Onze!`, player.team);
                 state.maoDeOnzeTeam = null;
                 // Award 1 point directly (not roundPoints)
@@ -208,6 +215,7 @@ export class TrucoGameManager {
             if (callType === 'mao_de_onze_play') {
                 // PLAY: proceed with the hand, 3 pts to opponent on loss
                 state.maoDeOnzeActive = true;
+                bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called mao_de_onze_play`);
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} accepts Mão de Onze!`, player.team);
                 // Transition normally into the hand phase so players can keep/call Mao/Baixa
                 state._phase = 'WAITING_FOR_HAND_PHASE';
@@ -231,6 +239,7 @@ export class TrucoGameManager {
                 if (caller.team === player.team) return; // Only opponents respond
 
                 if (callType === 'call_bluff') {
+                    bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called call_bluff`);
                     this.addNotification(state, `${player.name} challenges the call! Revealing hand...`, player.team);
 
                     // --- REVEAL PHASE ---
@@ -307,6 +316,7 @@ export class TrucoGameManager {
                     return; // Return immediately to block standard emitState until setTimeout fires
                 } else if (callType === 'accept') {
                     // Scenarios C & D: Switch allowed → NO points awarded regardless of truth
+                    bugReportManager.logGameEvent(state.roomId, `Player ${player.name} accepted`);
                     this.addNotification(state, `${player.name} allows the switch!`, player.team);
                     if (state.deck.length >= 3) {
                         caller.hand = setManilhas([state.deck.pop()!, state.deck.pop()!, state.deck.pop()!], state.manilhaRank!);
@@ -338,6 +348,7 @@ export class TrucoGameManager {
                 if (player.maoBaixaReady) return;
 
                 player.maoBaixaReady = true;
+                bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called keep_hand`);
                 this.addNotification(state, `${player.name} keeps hand`, player.team);
 
                 if (state.players.every(p => p.maoBaixaReady)) {
@@ -350,6 +361,7 @@ export class TrucoGameManager {
             if (callType === 'mao_baixa' || callType === 'mao_real') {
                 if (player.maoBaixaReady) return; // Already made their choice
                 const friendlyName = callType === 'mao_baixa' ? 'Mão Baixa' : 'Mão Real';
+                bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called ${callType}`);
                 this.addNotification(state, `${player.name} calls ${friendlyName}!`, player.team);
                 player.maoBaixaReady = true; // They've made their choice
                 state._maoActive = true;
@@ -392,6 +404,7 @@ export class TrucoGameManager {
                     if (callType === 'double') callName = 'DOUBLE TRUCO';
                     if (callType === 'triple') callName = 'TRIPLE TRUCO';
 
+                    bugReportManager.logGameEvent(state.roomId, `Player ${player.name} called ${callType}`);
                     this.addNotification(state, `${player.name} calls ${callName}!`, player.team);
 
                     state.callState = {
@@ -407,6 +420,7 @@ export class TrucoGameManager {
 
             if (state.callState.awaitingResponseFromTeam === player.team) {
                 if (callType === 'accept') {
+                    bugReportManager.logGameEvent(state.roomId, `Player ${player.name} accepted`);
                     this.addNotification(state, `${player.name} accepts!`, player.team);
                     if (state.callState.type === 'truco') state.roundPoints = 3;
                     if (state.callState.type === 'double') state.roundPoints = 6;
@@ -419,6 +433,7 @@ export class TrucoGameManager {
 
                 } else if (callType === 'decline' || callType === 'fold') {
                     const callingTeam = state.callState.callingTeam!;
+                    bugReportManager.logGameEvent(state.roomId, `Player ${player.name} folded`);
                     this.addNotification(state, `${player.name} folds`, player.team);
                     state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
                     this.endRound(state, callingTeam);
@@ -516,8 +531,10 @@ export class TrucoGameManager {
         const tricksPlayed = 3 - state.players[0]!.hand.length;
 
         if (winnerTeamFinal) {
+            bugReportManager.logGameEvent(state.roomId, `Trick won by Player ${winningPlayerName} (Team ${winnerTeamFinal})`);
             this.addNotification(state, `${winningPlayerName} won the trick!`, winningTeam);
         } else {
+            bugReportManager.logGameEvent(state.roomId, 'Trick tied');
             this.addNotification(state, `Tied trick!`, 0);
         }
 
@@ -553,6 +570,7 @@ export class TrucoGameManager {
     }
 
     private awardPoints(state: GameState, team: number, amount: number) {
+        bugReportManager.logGameEvent(state.roomId, `Team ${team} awarded ${amount} points`);
         if (team === 1) {
             state.points.team1 = Math.min(state.points.team1 + amount, 12);
         } else if (team === 2) {
@@ -561,6 +579,8 @@ export class TrucoGameManager {
     }
 
     private endRound(state: GameState, winningTeam: number) {
+        bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}`);
+
         // Mão de Ferro: winner wins the game immediately
         if (state.maoDeFerroActive) {
             this.addNotification(state, `🏆 Team ${winningTeam} wins MÃO DE FERRO and the GAME!`, winningTeam);
