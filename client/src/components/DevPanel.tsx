@@ -54,8 +54,9 @@ export const DevPanel: React.FC<DevPanelProps> = ({ gameState, roomId, socket })
         sendCommand({
             type: 'setScore',
             score: {
-                team1: Math.max(0, Math.min(12, team1)),
-                team2: Math.max(0, Math.min(12, team2))
+                // Endgame setup starts at 11, so manual score forcing should stay within that range.
+                team1: Math.max(0, Math.min(11, team1)),
+                team2: Math.max(0, Math.min(11, team2))
             }
         });
     };
@@ -139,7 +140,7 @@ export const DevPanel: React.FC<DevPanelProps> = ({ gameState, roomId, socket })
                     <input
                         type="number"
                         min={0}
-                        max={12}
+                        max={11}
                         value={customScore.team1}
                         onChange={(event) => setCustomScore((current) => ({ ...current, team1: event.target.value }))}
                     />
@@ -147,7 +148,7 @@ export const DevPanel: React.FC<DevPanelProps> = ({ gameState, roomId, socket })
                     <input
                         type="number"
                         min={0}
-                        max={12}
+                        max={11}
                         value={customScore.team2}
                         onChange={(event) => setCustomScore((current) => ({ ...current, team2: event.target.value }))}
                     />

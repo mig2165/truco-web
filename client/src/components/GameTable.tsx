@@ -33,6 +33,12 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         }
     };
 
+    const handleStartRematch = () => {
+        if (socket) {
+            socket.emit('startRematch', gameState.roomId);
+        }
+    };
+
     const getRelativePlayer = (offset: number) => {
         const myIndex = Math.max(0, gameState.players.findIndex((p: any) => p.id === currentPlayerId));
         const targetIndex = (myIndex + offset) % 4;
@@ -45,11 +51,16 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const leftPlayer = getRelativePlayer(3);
 
     const isMyTurn = gameState.players[gameState.currentTurnIndex]?.id === currentPlayerId;
+    const isHost = Boolean(currentPlayerId && gameState.hostPlayerId === currentPlayerId);
     const tricksPlayed = gameState.tricks.team1 + gameState.tricks.team2;
-    const canCallTruco = tricksPlayed >= 1 && gameState.roundPoints === 1 && gameState.callState.lastCallTeam !== me?.team;
-    const canCallDouble = gameState.roundPoints === 3 && gameState.callState.lastCallTeam !== me?.team;
-    const canCallTriple = gameState.roundPoints === 6 && gameState.callState.lastCallTeam !== me?.team;
+    const endgameHandActive = gameState.maoDeOnzeActive || gameState.maoDeFerroActive;
+    const canCallTruco = !endgameHandActive && tricksPlayed >= 1 && gameState.roundPoints === 1 && gameState.callState.lastCallTeam !== me?.team;
+    const canCallDouble = !endgameHandActive && gameState.roundPoints === 3 && gameState.callState.lastCallTeam !== me?.team;
+    const canCallTriple = !endgameHandActive && gameState.roundPoints === 6 && gameState.callState.lastCallTeam !== me?.team;
     const canCallMao = tricksPlayed === 0 && !gameState.callState.type && !me?.maoBaixaReady;
+    const winningTeamLabel = (gameState.winnerTeam === 1 || (gameState.winnerTeam == null && gameState.points.team1 > gameState.points.team2))
+        ? '🔵 Team 1 wins the GAME!'
+        : '🔴 Team 2 wins the GAME!';
 
     const getSuitSymbol = (suit: string) => {
         switch (suit) {
@@ -155,6 +166,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         : gameState.lastTrickWinner === null && gameState.table.length === 0 && tricksPlayed > 0
             ? '🤝 Tied trick!'
             : null;
+    const showTrickWinnerOverlay = gameState.status === 'playing' && Boolean(trickWinnerText);
 
     const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
 
@@ -213,7 +225,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             <div className="table-felt">
 
                 {/* Trick result banner (fades away) */}
-                {trickWinnerText && (
+                {showTrickWinnerOverlay && (
                     <div className="trick-result-overlay">
                         <div className="trick-result-banner">
                             {trickWinnerText}
@@ -264,7 +276,17 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     )}
                     {gameState.status === 'game_end' && (
                         <div className="round-result game-end">
-                            {gameState.points.team1 >= 11 ? '🔵 Team 1 wins the GAME!' : '🔴 Team 2 wins the GAME!'}
+                            <div className="game-end-title">{winningTeamLabel}</div>
+                            {isHost ? (
+                                <>
+                                    <div className="game-end-subtitle">Start a rematch with the same teams.</div>
+                                    <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
+                                        Start Rematch
+                                    </button>
+                                </>
+                            ) : (
+                                <div className="game-end-subtitle">Waiting for host to start rematch.</div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -365,6 +387,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
                         {gameState.status === 'playing' && isMyTurn && !canCallTruco && tricksPlayed === 0 && !gameState.callState.type && allPlayersReady && (
                             <div className="truco-hint">Truco can only be called after trick 1</div>
+                        )}
+                        {gameState.status === 'playing' && isMyTurn && gameState.maoDeFerroActive && allPlayersReady && (
+                            <div className="truco-hint">Mao de Ferro does not allow Truco.</div>
                         )}
                     </div>
                 )}

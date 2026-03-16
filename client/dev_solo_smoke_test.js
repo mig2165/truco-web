@@ -203,7 +203,7 @@ async function runDevRoomSmokeTest() {
         'dev room to finish a full game'
     );
 
-    assert.ok(finishedState.points.team1 === 12 || finishedState.points.team2 === 12, 'A finished game should end with a winning team');
+    assert.ok(finishedState.winnerTeam === 1 || finishedState.winnerTeam === 2, 'A finished game should record the winning team');
     socket.disconnect();
 }
 
