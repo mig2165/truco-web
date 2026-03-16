@@ -297,18 +297,50 @@ export class TrucoGameManager {
                             return;
                         }
 
-                        // Otherwise, keep playing the round, but make it worth 3 points
-                        state.roundPoints = Math.max(state.roundPoints, 3);
+                        // MÃO DE ONZE SPECIAL CHECK handled by >= 12 check above or by standard end-of-game checks.
+
+                         // If Mão de Onze is active, the round is worth 3 points if played out
+                        if (state.maoDeOnzeActive) {
+                            state.roundPoints = 3;
+                        } else {
+                            // Normal game: round points stay as is (1).
+                            // Hand calls award +1 directly and do not escalate the round value to 3.
+                        }
+
                         state._maoActive = false;
                         state._maoType = undefined;
                         state._maoCallerId = undefined;
                         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
-                        caller.exposedHand = false;
+                        
+                        // Handle card swap if truthful
+                        if (isTruth) {
+                             // The caller needs a new hand! 
+                             // Need to implement Case B: "Caller discards hand, receives new hand from deck"
+                             if (state.deck.length >= 3) {
+                                caller.hand = setManilhas([state.deck.pop()!, state.deck.pop()!, state.deck.pop()!], state.manilhaRank!);
+                                caller.maoBaixaReady = false; // Gets to choose again
+                                caller.exposedHand = false;   // Hide hand again (it was revealed for checking)
+                             }
+                             // Truthful means CALLER was right. They continue to act.
+                             state.currentTurnIndex = callerIndex;
+                        } else {
+                             // Case A: Lying
+                             // "Caller keeps the same hand... remains visible"
+                             // caller.exposedHand is already true from the challenge logic above.
+                             // caller.maoBaixaReady = true; // Forced to keep correct?
+                             // Rule: "The player cannot receive a new hand". Implies they are stuck with it.
+                             caller.maoBaixaReady = true;
+                             // Lying means CHALLENGER was right. Challenger starts.
+                             state.currentTurnIndex = playerIndex;
+                        }
 
                         if (state.players.every(p => p.maoBaixaReady)) {
                             state._phase = 'TRICK_PHASE';
+                            // If trick phase begins, whoever is currentTurnIndex starts the trick.
+                            // state.currentTurnIndex was set above based on who won the interaction.
                         } else {
                             state._phase = 'WAITING_FOR_HAND_PHASE';
+                            // If we stay in hand phase, currentTurnIndex determines who acts next (usually caller to decide again)
                         }
 
                         this.emitState(state);
@@ -325,9 +357,14 @@ export class TrucoGameManager {
                         caller.maoBaixaReady = true; // No cards to switch, mark as done
                     }
                     caller.exposedHand = false;
+                    
+                    // "The player who made the last successful action (last hand switch ...)"
+                    // Hand switch happened for Caller.
                     state.currentTurnIndex = callerIndex;
-                    state.startingPlayerIndex = callerIndex; // Caller starts next
-
+                    // Note: startingPlayerIndex is round-based, usually currentTurnIndex is what matters for tricks.
+                    // But wait, does startingPlayerIndex reset each trick?
+                    // trickLeaderIndex tracks trick winners. For 1st trick, currentTurnIndex must be set correctly.
+                    
                     // Stay in WAITING_FOR_HAND_PHASE (or advance if all ready)
                     state._maoActive = false;
                     state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
@@ -335,6 +372,10 @@ export class TrucoGameManager {
                         state._phase = 'TRICK_PHASE';
                     }
                     state.notifications = [];
+                    // Ensure the caller (who successfully switched) plays first if moving to TRICK_PHASE
+                    if (state._phase === 'TRICK_PHASE') {
+                         state.currentTurnIndex = callerIndex;
+                    }
                     this.emitState(state);
                     return;
                 } else {
@@ -545,7 +586,9 @@ export class TrucoGameManager {
         if (state.tricks.team1 >= 2 || state.tricks.team2 >= 2 || tricksPlayed >= 3) {
             setTimeout(() => {
                 // Final determination: Most tricks wins; tie = team that won trick 1, fallback to callerTeam
-                this.endRound(state, roundWinner ?? (state.startingPlayerIndex % 2 === 0 ? 1 : 2));
+                // Pass winningPlayerIndex if there was a winner on this last trick, for "Winner starts next" rule.
+                const nextStarter = winnerTeamFinal ? winningPlayerIndex : undefined;
+                this.endRound(state, roundWinner ?? (state.startingPlayerIndex % 2 === 0 ? 1 : 2), nextStarter);
             }, 2500);
         } else {
             setTimeout(() => {
@@ -578,9 +621,8 @@ export class TrucoGameManager {
         }
     }
 
-    private endRound(state: GameState, winningTeam: number) {
+    private endRound(state: GameState, winningTeam: number, nextStarterIndex?: number) {
         bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}`);
-
         // Mão de Ferro: winner wins the game immediately
         if (state.maoDeFerroActive) {
             this.addNotification(state, `🏆 Team ${winningTeam} wins MÃO DE FERRO and the GAME!`, winningTeam);
@@ -624,8 +666,12 @@ export class TrucoGameManager {
                 this.emitState(state);
                 setTimeout(() => {
                     // Delegate to startNewRound — it detects 11-11 (Mão de Ferro) or >= 12 (game_end)
-                    const winnerIdx = state.players.findIndex(p => p.team === winningTeam);
-                    state.startingPlayerIndex = winnerIdx >= 0 ? winnerIdx : (state.startingPlayerIndex + 1) % 4;
+                    if (nextStarterIndex !== undefined) {
+                        state.startingPlayerIndex = nextStarterIndex;
+                    } else {
+                        const winnerIdx = state.players.findIndex(p => p.team === winningTeam);
+                        state.startingPlayerIndex = winnerIdx >= 0 ? winnerIdx : (state.startingPlayerIndex + 1) % 4;
+                    }
                     this.startNewRound(state);
                 }, 3000);
                 return;
@@ -642,8 +688,12 @@ export class TrucoGameManager {
         setTimeout(() => {
             // Delegate to startNewRound — it detects 11-11 (Mão de Ferro) or >= 12 (game_end)
             // or exactly 11 (Mão de Onze)
-            const winnerIdx = state.players.findIndex(p => p.team === winningTeam);
-            state.startingPlayerIndex = winnerIdx >= 0 ? winnerIdx : (state.startingPlayerIndex + 1) % 4;
+            if (nextStarterIndex !== undefined) {
+                state.startingPlayerIndex = nextStarterIndex;
+            } else {
+                const winnerIdx = state.players.findIndex(p => p.team === winningTeam);
+                state.startingPlayerIndex = winnerIdx >= 0 ? winnerIdx : (state.startingPlayerIndex + 1) % 4;
+            }
             this.startNewRound(state);
         }, 3000);
     }
