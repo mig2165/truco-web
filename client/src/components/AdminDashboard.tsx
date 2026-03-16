@@ -51,7 +51,8 @@ interface DashboardStats {
 
 function getBaseUrl(): string {
   const port = window.location.port;
-  if (port === '5000' || port === '5173') {
+  // Dev servers run on non-3001 ports; route API calls to the backend
+  if (port && port !== '3001') {
     return 'http://localhost:3001';
   }
   return '';

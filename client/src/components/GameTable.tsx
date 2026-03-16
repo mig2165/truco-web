@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { LogOut, User, X } from 'lucide-react';
+import { LogOut, User, X, AlertTriangle } from 'lucide-react';
 import './GameTable.css';
+import ReportModal from './ReportModal';
 
 interface GameTableProps {
     gameState: any;
@@ -13,6 +14,7 @@ interface GameTableProps {
 
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
+    const [reportOpen, setReportOpen] = useState(false);
 
     if (!gameState) return null;
 
@@ -162,6 +164,11 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             {/* Player Menu */}
             <button className="menu-trigger glass-panel" onClick={() => setMenuOpen(true)}>
                 <User size={16} /> {playerName || me?.name || 'Me'}
+            </button>
+
+            {/* Report Issue Button */}
+            <button className="report-trigger glass-panel" onClick={() => setReportOpen(true)}>
+                <AlertTriangle size={16} /> Report Issue
             </button>
 
             {menuOpen && (
@@ -362,6 +369,17 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     </div>
                 )}
             </div>
+
+            {/* Report Issue Modal */}
+            {reportOpen && (
+                <ReportModal
+                    socket={socket}
+                    roomId={gameState.roomId}
+                    playerName={playerName || me?.name || 'Player'}
+                    gameState={gameState}
+                    onClose={() => setReportOpen(false)}
+                />
+            )}
         </div>
     );
 };
