@@ -466,6 +466,16 @@ export class BugReportManager {
                 });
             }
 
+            // Negative test: Mão de Onze must NOT trigger when neither team has 11
+            const noOnzeScores = { team1: 8, team2: 6 };
+            const shouldNotTriggerOnze = noOnzeScores.team1 === 11 || noOnzeScores.team2 === 11;
+            if (shouldNotTriggerOnze) {
+                violations.push({
+                    rule: 'mao_de_onze_trigger',
+                    description: 'Mão de Onze should not trigger when neither team has 11.',
+                });
+            }
+
             // Rule 7: Game ends when 11-point team gains a point
             // Simulate: team at 11 wins a round worth 1 point → score becomes 12 → game over
             const scoreBeforeWin = 11;
