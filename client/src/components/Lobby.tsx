@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Users, Spade } from 'lucide-react';
+import { Play, Users, Spade, Bug } from 'lucide-react';
+import { ChangelogLauncher } from './ChangelogLauncher';
 import './Lobby.css';
 
 export const Lobby: React.FC = () => {
@@ -9,7 +10,12 @@ export const Lobby: React.FC = () => {
     const navigate = useNavigate();
     const [playerName, setPlayerName] = useState('');
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
+    const [devSeed, setDevSeed] = useState('');
     const [error, setError] = useState('');
+    const searchParams = new URLSearchParams(window.location.search);
+    const isDevQueryEnabled = searchParams.get('dev') === '1';
+    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const devRoomsAvailable = isDevQueryEnabled && (import.meta.env.DEV || isLocalHost || import.meta.env.VITE_ENABLE_DEV_ROOMS === 'true');
 
     const handleCreateRoom = () => {
         if (!playerName.trim()) {
@@ -32,6 +38,27 @@ export const Lobby: React.FC = () => {
             // Validation happens in the room component but we can navigate now
             navigate(`/room/${roomIdToJoin}?name=${encodeURIComponent(playerName)}`);
         }
+    };
+
+    const handleCreateDevRoom = () => {
+        if (!playerName.trim()) {
+            setError('Please enter your name first');
+            return;
+        }
+        if (!socket) return;
+
+        socket.emit('createRoom', {
+            playerName,
+            devMode: true,
+            seed: devSeed.trim() || undefined
+        }, (roomId: string) => {
+            if (!roomId) {
+                setError('Dev solo mode is disabled on this server.');
+                return;
+            }
+
+            navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&dev=1`);
+        });
     };
 
     return (
@@ -87,6 +114,43 @@ export const Lobby: React.FC = () => {
                             </button>
                         </div>
                     </div>
+
+                    {devRoomsAvailable && (
+                        <div className="dev-card">
+                            <div className="dev-card-header">
+                                <div>
+                                    <p className="dev-card-kicker">Hidden Debug Flow</p>
+                                    <h3><Bug size={16} /> Solo Dev Room</h3>
+                                </div>
+                                <span className="dev-card-badge">?dev=1</span>
+                            </div>
+                            <p className="dev-card-copy">
+                                Launch a seeded solo room and auto-fill the other three seats with server bots.
+                            </p>
+                            <div className="input-group">
+                                <label>Optional Seed</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. bug-11-11"
+                                    value={devSeed}
+                                    onChange={(event) => setDevSeed(event.target.value)}
+                                    maxLength={30}
+                                />
+                            </div>
+                            <button
+                                className="btn btn-secondary dev-room-btn"
+                                onClick={handleCreateDevRoom}
+                                disabled={!isConnected}
+                            >
+                                <Bug size={18} /> Create Solo Dev Room
+                            </button>
+                        </div>
+                    )}
+
+                    <ChangelogLauncher
+                        className="btn changelog-update-btn changelog-trigger"
+                        label="UPDATE! View changelog"
+                    />
                 </div>
             </div>
         </div>

@@ -258,6 +258,14 @@
     width: 100%;
 }
 
+.team-picker-changelog-btn {
+    max-width: 240px;
+}
+
+.waiting-lobby-changelog-btn {
+    max-width: 320px;
+}
+
 .team-btn {
     flex: 1;
     padding: 1.25rem;
@@ -426,4 +434,29 @@
 
 .copy-btn:hover {
     background: rgba(59, 130, 246, 0.15);
+}
+
+.live-game-shell {
+    width: 100%;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+}
+
+.live-game-stage {
+    flex: 1;
+    min-width: 0;
+}
+
+.live-game-shell.with-dev-panel {
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+    .live-game-shell.with-dev-panel {
+        flex-direction: column;
+    }
 }
