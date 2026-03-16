@@ -11,17 +11,17 @@ interface ReportModalProps {
     onClose: () => void;
 }
 
-const CATEGORIES = [
-    'Gameplay bug',
-    'UI bug',
-    'Scoring bug',
-    'Hand call / bluff bug',
-    'Other',
+const CATEGORIES: { value: string; label: string }[] = [
+    { value: 'gameplay_bug', label: 'Gameplay bug' },
+    { value: 'ui_bug', label: 'UI bug' },
+    { value: 'scoring_bug', label: 'Scoring bug' },
+    { value: 'hand_call_bug', label: 'Hand call / bluff bug' },
+    { value: 'other', label: 'Other' },
 ];
 
 export default function ReportModal({ socket, roomId, playerName, gameState, onClose }: ReportModalProps) {
     const [description, setDescription] = useState('');
-    const [category, setCategory] = useState(CATEGORIES[0]);
+    const [category, setCategory] = useState(CATEGORIES[0].value);
     const [screenshotData, setScreenshotData] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -43,9 +43,13 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
         socket.emit(
             'submitBugReport',
             { roomId, description: description.trim(), category, screenshotData },
-            (res: { ok: boolean; message: string }) => {
+            (report: { id: string; status: string }) => {
                 setSubmitting(false);
-                setResult(res);
+                if (report?.id) {
+                    setResult({ ok: true, message: `Report submitted (ID: ${report.id}). Status: ${report.status}` });
+                } else {
+                    setResult({ ok: false, message: 'Failed to submit report. Please try again.' });
+                }
             },
         );
     };
@@ -91,7 +95,7 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
                             onChange={e => setCategory(e.target.value)}
                         >
                             {CATEGORIES.map(c => (
-                                <option key={c} value={c}>{c}</option>
+                                <option key={c.value} value={c.value}>{c.label}</option>
                             ))}
                         </select>
 
