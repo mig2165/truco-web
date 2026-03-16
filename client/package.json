@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:dev-room": "node dev_solo_smoke_test.js"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",

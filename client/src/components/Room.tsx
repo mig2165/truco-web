@@ -6,6 +6,8 @@ import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
 import { RulesPanel } from './RulesPanel';
+import { DevPanel } from './DevPanel';
+import { ChangelogLauncher } from './ChangelogLauncher';
 
 export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
@@ -65,10 +67,6 @@ export const Room: React.FC = () => {
         };
     }, [socket, roomId, playerName, teamPick]);
 
-    const handleStartGame = () => {
-        if (socket && roomId) socket.emit('startGame', roomId);
-    };
-
     const handleLeave = () => {
         navigate('/');
     };
@@ -104,6 +102,10 @@ export const Room: React.FC = () => {
                         <button className="team-btn team-1-btn" onClick={() => setTeamPick(1)}>Team 1 🔵</button>
                         <button className="team-btn team-2-btn" onClick={() => setTeamPick(2)}>Team 2 🔴</button>
                     </div>
+                    <ChangelogLauncher
+                        className="btn changelog-update-btn team-picker-changelog-btn"
+                        label="UPDATE! View changelog"
+                    />
                 </div>
             </div>
         );
@@ -118,8 +120,8 @@ export const Room: React.FC = () => {
         );
     }
 
-    const isHost = gameState.players[0]?.id === socket?.id;
     const isWaiting = gameState.status === 'waiting';
+    const isDevRoom = Boolean(gameState.dev?.enabled);
 
     return (
         <div className="room-container">
@@ -136,7 +138,7 @@ export const Room: React.FC = () => {
                 </div>
                 <div className="header-center">
                     {isWaiting ? (
-                        <h2>Waiting for players... ({gameState.players.length}/4)</h2>
+                        <h2>{isDevRoom ? 'Preparing dev room...' : `Waiting for players... (${gameState.players.length}/4)`}</h2>
                     ) : (
                         <h2>Truco</h2>
                     )}
@@ -193,26 +195,36 @@ export const Room: React.FC = () => {
                         </div>
 
                         <div className="room-invite">
-                            <p>Share this code with your friends:</p>
+                            <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
                             <div className="invite-code" onClick={copyCode}>
                                 {roomId} {copied ? '✓' : <Copy size={14} />}
                             </div>
                         </div>
 
-                        {isHost && gameState.players.length === 4 && (
-                            <button className="btn btn-primary start-btn" onClick={handleStartGame}>
-                                Start Match
-                            </button>
-                        )}
-                        {isHost && gameState.players.length < 4 && (
+                        <ChangelogLauncher
+                            className="btn changelog-update-btn waiting-lobby-changelog-btn"
+                            label="UPDATE! View changelog"
+                        />
+
+                        {isDevRoom ? (
+                            <p className="hint">Server bots are being seated and the round will auto-start.</p>
+                        ) : (
                             <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
-                        )}
-                        {!isHost && (
-                            <p className="hint">Waiting for host to start the game...</p>
                         )}
                     </div>
                 ) : (
-                    <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
+                    <div className={`live-game-shell ${isDevRoom ? 'with-dev-panel' : ''}`}>
+                        <div className="live-game-stage">
+                            <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
+                        </div>
+                        {isDevRoom && (
+                            <DevPanel
+                                gameState={gameState}
+                                roomId={roomId || ''}
+                                socket={socket}
+                            />
+                        )}
+                    </div>
                 )}
             </main>
 

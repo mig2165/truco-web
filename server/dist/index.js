@@ -10,6 +10,12 @@ const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
 const gameManager_1 = require("./gameManager");
 const app = (0, express_1.default)();
+const PORT = process.env.PORT || 3001;
+// Logging middleware
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
 app.use((0, cors_1.default)());
 const httpServer = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(httpServer, {
@@ -18,7 +24,9 @@ const io = new socket_io_1.Server(httpServer, {
         methods: ['GET', 'POST'],
     },
 });
-const PORT = process.env.PORT || 3001;
+app.get('/health', (req, res) => {
+    res.send('OK');
+});
 // Serve React build
 const clientBuildPath = path_1.default.join(__dirname, '../../client/dist');
 app.use(express_1.default.static(clientBuildPath));
