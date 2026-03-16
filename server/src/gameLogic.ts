@@ -14,12 +14,30 @@ export type Player = {
     name: string;
     hand: Card[];
     team: number; // 1 or 2
+    isBot: boolean;
     exposedHand: boolean; // True if player lied on Mao Baixa/Real and their hand must be shown to all
     maoBaixaReady: boolean; // True if player has confirmed keeping their hand
 };
 
+export type DebugCommand =
+    | { type: 'pauseBots' }
+    | { type: 'resumeBots' }
+    | { type: 'stepBots' }
+    | { type: 'setBotSpeed'; speedMs: number }
+    | { type: 'setScore'; score: { team1: number; team2: number } };
+
+export type DevState = {
+    enabled: boolean;
+    seed: string;
+    botsPaused: boolean;
+    botSpeedMs: number;
+    log: string[];
+};
+
 export interface GameState {
     roomId: string;
+    hostPlayerId: string | null;
+    hostPlayerName: string | null;
     players: Player[];
     deck: Card[];
     vira: Card | null;
@@ -31,6 +49,7 @@ export interface GameState {
     table: { playerIndex: number; card: Card }[];
     startingPlayerIndex: number;
     status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';
+    winnerTeam?: number | null;
     callState: {
         type: 'truco' | 'double' | 'triple' | 'mao_baixa' | 'mao_real' | null;
         callingTeam: number | null;
@@ -52,6 +71,7 @@ export interface GameState {
     maoDeOnzeActive?: boolean;
     maoDeOnzeTeam?: number | null;  // Team that has 11 points
     maoDeFerroActive?: boolean;
+    dev?: DevState;
 }
 
 

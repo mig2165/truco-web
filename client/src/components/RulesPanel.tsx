@@ -20,7 +20,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
                             <li><strong>4 players</strong> in 2 teams (Team 1 vs Team 2)</li>
                             <li>Each player gets <strong>3 cards</strong> per round</li>
                             <li>No 8s, 9s, or 10s in the deck</li>
-                            <li>First team to <strong>11 points</strong> wins the game</li>
+                            <li><strong>11 points</strong> starts the endgame, not an automatic win</li>
                         </ul>
                     </section>
 
@@ -65,6 +65,30 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
                             <li>After accepting Truco, the <strong>opposing</strong> team can call <strong>DOUBLE</strong> (6 pts)</li>
                             <li>Then the other team can call <strong>TRIPLE</strong> (9 pts)</li>
                             <li>The same team <strong>cannot</strong> escalate twice in a row</li>
+                            <li>Truco, Double, and Triple are <strong>not allowed</strong> during <strong>Mão de Onze</strong> or <strong>Mão de Ferro</strong></li>
+                        </ul>
+                    </section>
+
+                    <section className="rules-section">
+                        <h3>🏁 Endgame Rules</h3>
+                        <ul>
+                            <li>Normal scoring is <strong>hard capped at 11</strong></li>
+                            <li>If a team reaches <strong>11</strong>, the next hand becomes <strong>Mão de Onze</strong></li>
+                            <li>If both teams are at <strong>11-11</strong>, the next hand is <strong>Mão de Ferro</strong></li>
+                            <li>Example: at <strong>10-10</strong>, winning a Truco hand still only moves the winner to <strong>11</strong>; they must still survive <strong>Mão de Onze</strong> to finish the game</li>
+                        </ul>
+                        <h4>Mão de Onze</h4>
+                        <ul>
+                            <li>The team on <strong>11</strong> can <strong>Play</strong> or <strong>Run</strong></li>
+                            <li>If they <strong>Run</strong>, the opponents gain <strong>1 point</strong></li>
+                            <li>If they <strong>Play</strong> and win, they can finally go past <strong>11</strong> and win the game</li>
+                            <li>If they <strong>Play</strong> and lose, the opponents get the special hand payout and the score resolves from there</li>
+                        </ul>
+                        <h4>Mão de Ferro</h4>
+                        <ul>
+                            <li>At <strong>11-11</strong>, all cards stay hidden</li>
+                            <li>No one can call <strong>Truco</strong></li>
+                            <li>The winner of the hand wins the game directly</li>
                         </ul>
                     </section>
 
@@ -98,7 +122,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
                             <li>Truco win: <strong>3 points</strong></li>
                             <li>Double win: <strong>6 points</strong></li>
                             <li>Triple win: <strong>9 points</strong></li>
-                            <li>Goal: <strong>11 points</strong> to win</li>
+                            <li>Normal scoring stops at <strong>11</strong>; only a resolved <strong>Mão de Onze</strong> can push a team beyond that</li>
                         </ul>
                     </section>
                 </div>

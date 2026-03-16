@@ -121,9 +121,36 @@
     flex: 1;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;
     position: relative;
     padding: 2rem;
+    min-height: 0;
+}
+
+.room-content-shell {
+    width: min(1600px, 100%);
+    flex: 1;
+    display: flex;
+    gap: 1rem;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.room-main-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+}
+
+.room-chat-sidebar {
+    width: min(340px, 30vw);
+    min-width: 300px;
+    display: flex;
+    align-self: stretch;
+    min-height: 0;
 }
 
 .waiting-lobby {
@@ -252,10 +279,28 @@
     color: var(--text-secondary);
 }
 
+.team-picker-status {
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.team-picker-status.full {
+    color: #fca5a5;
+    font-weight: 700;
+}
+
 .team-options {
     display: flex;
     gap: 1rem;
     width: 100%;
+}
+
+.team-picker-changelog-btn {
+    max-width: 240px;
+}
+
+.waiting-lobby-changelog-btn {
+    max-width: 320px;
 }
 
 .team-btn {
@@ -290,6 +335,77 @@
     background: rgba(239, 68, 68, 0.3);
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(239, 68, 68, 0.2);
+}
+
+.team-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    width: 100%;
+}
+
+.team-seat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    text-align: left;
+    padding: 1.1rem;
+    border-radius: 14px;
+    border: 1px solid transparent;
+    background: rgba(15, 23, 42, 0.45);
+    color: var(--text-primary);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.team-seat-card:not(:disabled):hover {
+    transform: translateY(-3px);
+}
+
+.team-seat-card:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.team-1-card {
+    border-color: rgba(59, 130, 246, 0.35);
+    box-shadow: 0 14px 28px rgba(59, 130, 246, 0.12);
+}
+
+.team-1-card:not(:disabled):hover {
+    box-shadow: 0 18px 36px rgba(59, 130, 246, 0.2);
+}
+
+.team-2-card {
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 14px 28px rgba(239, 68, 68, 0.12);
+}
+
+.team-2-card:not(:disabled):hover {
+    box-shadow: 0 18px 36px rgba(239, 68, 68, 0.2);
+}
+
+.team-seat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 800;
+}
+
+.team-seat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.team-seat-action {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.team-picker-warning {
+    color: #fecaca;
+    font-size: 0.9rem;
+    text-align: center;
 }
 
 /* Teams Grid in Waiting Lobby */
@@ -426,4 +542,54 @@
 
 .copy-btn:hover {
     background: rgba(59, 130, 246, 0.15);
+}
+
+.live-game-shell {
+    width: 100%;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.live-game-stage {
+    flex: 1;
+    min-width: 0;
+}
+
+.live-game-shell.with-dev-panel {
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+    .room-content-shell {
+        flex-direction: column;
+    }
+
+    .room-chat-sidebar {
+        width: 100%;
+        min-width: 0;
+        min-height: 320px;
+    }
+
+    .live-game-shell.with-dev-panel {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 700px) {
+    .game-area {
+        padding: 1rem;
+    }
+
+    .team-picker {
+        padding: 2rem 1.25rem;
+    }
+
+    .team-pick-grid {
+        grid-template-columns: 1fr;
+    }
 }

@@ -58,3 +58,16 @@ button {
   cursor: pointer;
   font-family: inherit;
 }
+
+.btn.changelog-update-btn {
+  background: linear-gradient(135deg, #facc15, #f59e0b);
+  color: #1f2937;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.28);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  font-weight: 800;
+}
+
+.btn.changelog-update-btn:not(:disabled):hover {
+  background: linear-gradient(135deg, #fde047, #fbbf24);
+  transform: translateY(-1px);
+}

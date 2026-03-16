@@ -1,11 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
-import { Users, Info, MessageSquare, Copy, BookOpen } from 'lucide-react';
+import { Users, Info, Copy, BookOpen } from 'lucide-react';
 import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
 import { RulesPanel } from './RulesPanel';
+import { DevPanel } from './DevPanel';
+import { ChangelogLauncher } from './ChangelogLauncher';
+
+type RoomPreviewPlayer = {
+    id: string;
+    name: string;
+    team: number;
+    isBot?: boolean;
+};
+
+type RoomPreviewState = {
+    roomId: string;
+    status: string;
+    dev?: { enabled?: boolean };
+    players: RoomPreviewPlayer[];
+};
 
 export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
@@ -14,15 +30,16 @@ export const Room: React.FC = () => {
     const { socket } = useSocket();
 
     const [gameState, setGameState] = useState<any>(null);
+    const [roomPreview, setRoomPreview] = useState<RoomPreviewState | null>(null);
     const [error, setError] = useState('');
     const [teamPick, setTeamPick] = useState<null | 1 | 2>(null);
+    const [joinInFlight, setJoinInFlight] = useState(false);
+    const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
 
-    const [chatOpen, setChatOpen] = useState(false);
     const [rulesOpen, setRulesOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
 
     const playerName = new URLSearchParams(location.search).get('name') || 'Player';
     const isCreating = new URLSearchParams(location.search).get('create') === '1';
@@ -32,42 +49,85 @@ export const Room: React.FC = () => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
 
-    // Join the room only ONCE when team has been chosen
+    // Start listening before the user joins so we can render the team picker with live room data.
     useEffect(() => {
-        if (!socket || !roomId || !teamPick) return;
+        if (!socket || !roomId) return;
 
-        // Attach listeners every mount
-        const onStateUpdate = (state: any) => setGameState(state);
-        const onError = (msg: string) => setError(msg);
+        const onStateUpdate = (state: any) => {
+            setGameState(state);
+            setRoomPreview({
+                roomId: state.roomId,
+                status: state.status,
+                dev: state.dev,
+                players: state.players.map((player: any) => ({
+                    id: player.id,
+                    name: player.name,
+                    team: player.team,
+                    isBot: player.isBot
+                }))
+            });
+
+            // Once the server echoes us back in the roster, we know the join actually stuck.
+            if (state.players.some((player: any) => player.id === socket.id)) {
+                hasJoined.current = true;
+                setJoinedRoom(true);
+                setJoinInFlight(false);
+            }
+        };
+        const onRoomPreview = (preview: RoomPreviewState) => setRoomPreview(preview);
+        const onError = (msg: string) => {
+            setJoinInFlight(false);
+
+            // Full-room failures should surface as an explicit prompt, then bounce back to the lobby.
+            if (msg === 'Game full!') {
+                window.alert('Game full!');
+                navigate('/');
+                return;
+            }
+
+            // If a seat was taken between preview and click, return the user to the picker and refresh it.
+            if (msg === 'Team 1 is full.' || msg === 'Team 2 is full.') {
+                window.alert(msg);
+                hasJoined.current = false;
+                setJoinedRoom(false);
+                setTeamPick(null);
+                socket.emit('getRoomPreview', roomId);
+                return;
+            }
+
+            setError(msg);
+        };
         const onChat = (msg: any) => {
             setChatMessages(prev => [...prev, msg]);
-            // If chat panel is closed, increment unread
-            setChatOpen(open => {
-                if (!open) setUnreadCount(c => c + 1);
-                return open;
-            });
         };
 
         socket.on('gameStateUpdate', onStateUpdate);
+        socket.on('roomPreview', onRoomPreview);
         socket.on('error', onError);
         socket.on('chatMessage', onChat);
-
-        // Only emit joinRoom once
-        if (!hasJoined.current) {
-            hasJoined.current = true;
-            socket.emit('joinRoom', roomId, playerName, teamPick);
-        }
+        socket.emit('getRoomPreview', roomId);
 
         return () => {
             socket.off('gameStateUpdate', onStateUpdate);
+            socket.off('roomPreview', onRoomPreview);
             socket.off('error', onError);
             socket.off('chatMessage', onChat);
         };
-    }, [socket, roomId, playerName, teamPick]);
+    }, [socket, roomId, navigate]);
 
-    const handleStartGame = () => {
-        if (socket && roomId) socket.emit('startGame', roomId);
-    };
+    // Join the room when the user actually clicks a team card.
+    useEffect(() => {
+        if (!socket || !roomId || !teamPick || joinInFlight || joinedRoom || hasJoined.current) return;
+
+        if ((roomPreview?.players.length ?? 0) >= 4) {
+            window.alert('Game full!');
+            navigate('/');
+            return;
+        }
+
+        setJoinInFlight(true);
+        socket.emit('joinRoom', roomId, playerName, teamPick);
+    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
 
     const handleLeave = () => {
         navigate('/');
@@ -80,6 +140,48 @@ export const Room: React.FC = () => {
             setTimeout(() => setCopied(false), 2000);
         }
     };
+
+    const handleTeamSelection = (team: 1 | 2) => {
+        // Keep the click path explicit so users get a prompt instead of a dead button.
+        if (roomIsFull) {
+            window.alert('Game full!');
+            navigate('/');
+            return;
+        }
+
+        if (team === 1 && team1IsFull) {
+            window.alert('Team 1 is full.');
+            return;
+        }
+
+        if (team === 2 && team2IsFull) {
+            window.alert('Team 2 is full.');
+            return;
+        }
+
+        setTeamPick(team);
+    };
+
+    const previewPlayers = roomPreview?.players ?? [];
+    const team1PreviewPlayers = previewPlayers.filter((player) => player.team === 1);
+    const team2PreviewPlayers = previewPlayers.filter((player) => player.team === 2);
+    const roomIsFull = previewPlayers.length >= 4;
+    const team1IsFull = team1PreviewPlayers.length >= 2;
+    const team2IsFull = team2PreviewPlayers.length >= 2;
+
+    const renderPickerSlots = (players: RoomPreviewPlayer[], team: 1 | 2) => (
+        <>
+            {players.map((player) => (
+                <div key={player.id} className="player-pill">
+                    <span className="player-avatar-sm">{player.name[0]}</span>
+                    {player.name}
+                </div>
+            ))}
+            {Array.from({ length: Math.max(0, 2 - players.length) }).map((_, index) => (
+                <div key={`${team}-open-${index}`} className="player-pill empty">Open slot...</div>
+            ))}
+        </>
+    );
 
     if (error) {
         return (
@@ -100,10 +202,49 @@ export const Room: React.FC = () => {
                 <div className="team-picker glass-panel">
                     <h2>Pick Your Team</h2>
                     <p className="subtitle">Room: <strong>{roomId}</strong></p>
-                    <div className="team-options">
-                        <button className="team-btn team-1-btn" onClick={() => setTeamPick(1)}>Team 1 🔵</button>
-                        <button className="team-btn team-2-btn" onClick={() => setTeamPick(2)}>Team 2 🔴</button>
+                    <p className={`team-picker-status ${roomIsFull ? 'full' : ''}`}>
+                        {roomIsFull ? 'Game full!' : `${previewPlayers.length}/4 players seated. Click a team to join.`}
+                    </p>
+                    <div className="team-pick-grid">
+                        <button
+                            className="team-seat-card team-1-card"
+                            onClick={() => handleTeamSelection(1)}
+                            disabled={joinInFlight}
+                        >
+                            <div className="team-seat-header">
+                                <span>🔵 Team 1</span>
+                                <span>{team1PreviewPlayers.length}/2</span>
+                            </div>
+                            <div className="team-seat-list">
+                                {renderPickerSlots(team1PreviewPlayers, 1)}
+                            </div>
+                            <span className="team-seat-action">
+                                {team1IsFull ? 'Team 1 full' : 'Click to join Team 1'}
+                            </span>
+                        </button>
+
+                        <button
+                            className="team-seat-card team-2-card"
+                            onClick={() => handleTeamSelection(2)}
+                            disabled={joinInFlight}
+                        >
+                            <div className="team-seat-header">
+                                <span>🔴 Team 2</span>
+                                <span>{team2PreviewPlayers.length}/2</span>
+                            </div>
+                            <div className="team-seat-list">
+                                {renderPickerSlots(team2PreviewPlayers, 2)}
+                            </div>
+                            <span className="team-seat-action">
+                                {team2IsFull ? 'Team 2 full' : 'Click to join Team 2'}
+                            </span>
+                        </button>
                     </div>
+                    {roomIsFull && <p className="team-picker-warning">All four seats are already taken.</p>}
+                    <ChangelogLauncher
+                        className="btn changelog-update-btn team-picker-changelog-btn"
+                        label="UPDATE! View changelog"
+                    />
                 </div>
             </div>
         );
@@ -118,8 +259,8 @@ export const Room: React.FC = () => {
         );
     }
 
-    const isHost = gameState.players[0]?.id === socket?.id;
     const isWaiting = gameState.status === 'waiting';
+    const isDevRoom = Boolean(gameState.dev?.enabled);
 
     return (
         <div className="room-container">
@@ -136,7 +277,7 @@ export const Room: React.FC = () => {
                 </div>
                 <div className="header-center">
                     {isWaiting ? (
-                        <h2>Waiting for players... ({gameState.players.length}/4)</h2>
+                        <h2>{isDevRoom ? 'Preparing dev room...' : `Waiting for players... (${gameState.players.length}/4)`}</h2>
                     ) : (
                         <h2>Truco</h2>
                     )}
@@ -150,86 +291,93 @@ export const Room: React.FC = () => {
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />
                     </button>
-                    <button className="icon-btn" onClick={() => { setChatOpen(!chatOpen); setUnreadCount(0); }} title="Chat" style={{ position: 'relative' }}>
-                        <MessageSquare size={20} />
-                        {unreadCount > 0 && <span className="chat-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-                    </button>
                 </div>
             </header>
 
             {/* Main Game Area */}
             <main className="game-area">
-                {isWaiting ? (
-                    <div className="waiting-lobby glass-panel">
-                        <Users size={48} className="lobby-icon" />
-                        <h3>Players ({gameState.players.length}/4)</h3>
+                <div className="room-content-shell">
+                    <div className="room-main-panel">
+                        {isWaiting ? (
+                            <div className="waiting-lobby glass-panel">
+                                <Users size={48} className="lobby-icon" />
+                                <h3>Players ({gameState.players.length}/4)</h3>
 
-                        <div className="teams-grid">
-                            <div className="team-col team-1-col">
-                                <div className="team-col-header">🔵 Team 1</div>
-                                {gameState.players.filter((p: any) => p.team === 1).map((p: any) => (
-                                    <div key={p.id} className="player-pill">
-                                        <span className="player-avatar-sm">{p.name[0]}</span>
-                                        {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                <div className="teams-grid">
+                                    <div className="team-col team-1-col">
+                                        <div className="team-col-header">🔵 Team 1</div>
+                                        {gameState.players.filter((p: any) => p.team === 1).map((p: any) => (
+                                            <div key={p.id} className="player-pill">
+                                                <span className="player-avatar-sm">{p.name[0]}</span>
+                                                {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                            </div>
+                                        ))}
+                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
+                                            <div key={i} className="player-pill empty">Open slot...</div>
+                                        ))}
                                     </div>
-                                ))}
-                                {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
-                                    <div key={i} className="player-pill empty">Open slot...</div>
-                                ))}
-                            </div>
-                            <div className="vs-divider">VS</div>
-                            <div className="team-col team-2-col">
-                                <div className="team-col-header">🔴 Team 2</div>
-                                {gameState.players.filter((p: any) => p.team === 2).map((p: any) => (
-                                    <div key={p.id} className="player-pill">
-                                        <span className="player-avatar-sm">{p.name[0]}</span>
-                                        {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                    <div className="vs-divider">VS</div>
+                                    <div className="team-col team-2-col">
+                                        <div className="team-col-header">🔴 Team 2</div>
+                                        {gameState.players.filter((p: any) => p.team === 2).map((p: any) => (
+                                            <div key={p.id} className="player-pill">
+                                                <span className="player-avatar-sm">{p.name[0]}</span>
+                                                {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                            </div>
+                                        ))}
+                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
+                                            <div key={i} className="player-pill empty">Open slot...</div>
+                                        ))}
                                     </div>
-                                ))}
-                                {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
-                                    <div key={i} className="player-pill empty">Open slot...</div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
 
-                        <div className="room-invite">
-                            <p>Share this code with your friends:</p>
-                            <div className="invite-code" onClick={copyCode}>
-                                {roomId} {copied ? '✓' : <Copy size={14} />}
-                            </div>
-                        </div>
+                                <div className="room-invite">
+                                    <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
+                                    <div className="invite-code" onClick={copyCode}>
+                                        {roomId} {copied ? '✓' : <Copy size={14} />}
+                                    </div>
+                                </div>
 
-                        {isHost && gameState.players.length === 4 && (
-                            <button className="btn btn-primary start-btn" onClick={handleStartGame}>
-                                Start Match
-                            </button>
-                        )}
-                        {isHost && gameState.players.length < 4 && (
-                            <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
-                        )}
-                        {!isHost && (
-                            <p className="hint">Waiting for host to start the game...</p>
+                                <ChangelogLauncher
+                                    className="btn changelog-update-btn waiting-lobby-changelog-btn"
+                                    label="UPDATE! View changelog"
+                                />
+
+                                {isDevRoom ? (
+                                    <p className="hint">Server bots are being seated and the round will auto-start.</p>
+                                ) : (
+                                    <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className={`live-game-shell ${isDevRoom ? 'with-dev-panel' : ''}`}>
+                                <div className="live-game-stage">
+                                    <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
+                                </div>
+                                {isDevRoom && (
+                                    <DevPanel
+                                        gameState={gameState}
+                                        roomId={roomId || ''}
+                                        socket={socket}
+                                    />
+                                )}
+                            </div>
                         )}
                     </div>
-                ) : (
-                    <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
-                )}
-            </main>
 
-            {/* Chat Panel */}
-            {chatOpen && (
-                <>
-                    <div className="chat-overlay" onClick={() => setChatOpen(false)} />
-                    <ChatPanel
-                        socket={socket}
-                        roomId={roomId || ''}
-                        playerName={playerName}
-                        playerTeam={gameState.players.find((p: any) => p.id === socket?.id)?.team || 0}
-                        messages={chatMessages}
-                        onClose={() => setChatOpen(false)}
-                    />
-                </>
-            )}
+                    <aside className="room-chat-sidebar">
+                        <ChatPanel
+                            socket={socket}
+                            roomId={roomId || ''}
+                            playerName={playerName}
+                            playerTeam={gameState.players.find((p: any) => p.id === socket?.id)?.team || teamPick || 0}
+                            messages={chatMessages}
+                            onClose={() => undefined}
+                            docked
+                        />
+                    </aside>
+                </div>
+            </main>
 
             {/* Rules Panel */}
             {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
