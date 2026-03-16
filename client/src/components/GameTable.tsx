@@ -12,6 +12,13 @@ interface GameTableProps {
     onLeave?: () => void;
 }
 
+const SUIT_STRENGTH: Record<string, number> = {
+    diamonds: 1,
+    spades: 2,
+    hearts: 3,
+    clubs: 4
+};
+
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
@@ -99,9 +106,32 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         return played ? played.card : null;
     };
 
+    // Mirror the server-side card comparison so the center panel can show the
+    // card that is currently winning the trick without waiting for another emit.
+    const compareCardsForLead = (cardA: any, cardB: any) => {
+        if (cardA.isManilha && !cardB.isManilha) return 1;
+        if (!cardA.isManilha && cardB.isManilha) return -1;
+        if (cardA.isManilha && cardB.isManilha) {
+            return cardA.manilhaValue - cardB.manilhaValue;
+        }
+
+        const valueDifference = cardA.value - cardB.value;
+        if (valueDifference !== 0) return valueDifference;
+
+        return (SUIT_STRENGTH[cardA.suit] || 0) - (SUIT_STRENGTH[cardB.suit] || 0);
+    };
+
     // Get the global player index for a given relative player object
     const getGlobalIndex = (player: any) =>
         player ? gameState.players.findIndex((p: any) => p.id === player.id) : -1;
+
+    const getCurrentLeader = () => {
+        if (gameState.table.length === 0) return null;
+
+        return gameState.table.reduce((leader: any, entry: any) =>
+            compareCardsForLead(entry.card, leader.card) > 0 ? entry : leader
+        );
+    };
 
     const renderPlayerPosition = (
         player: any,
@@ -169,6 +199,11 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const showTrickWinnerOverlay = gameState.status === 'playing' && Boolean(trickWinnerText);
 
     const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
+    const currentLeaderEntry = getCurrentLeader();
+    const currentLeaderPlayer = currentLeaderEntry ? gameState.players[currentLeaderEntry.playerIndex] : null;
+    const currentLeaderLabel = currentLeaderPlayer
+        ? `Current leader: ${currentLeaderPlayer.id === currentPlayerId ? `${currentLeaderPlayer.name} (You)` : currentLeaderPlayer.name}`
+        : 'Waiting for the first card';
 
     return (
         <div className="game-table-wrapper">
@@ -249,22 +284,21 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                         </div>
                     )}
 
-                    {/* Center played cards */}
-                    <div className="played-cards-area">
-                        {gameState.table.map((entry: any) => {
-                            const player = gameState.players[entry.playerIndex];
-                            const relOffset = (entry.playerIndex - getGlobalIndex(me) + 4) % 4;
-                            const posMap: Record<number, string> = { 0: 'bottom', 1: 'right', 2: 'top', 3: 'left' };
-                            const pos = posMap[relOffset] || 'bottom';
-                            return (
-                                <div key={entry.playerIndex} className={`played-card-slot played-${pos}`}>
-                                    {renderCard(entry.card, entry.playerIndex)}
-                                    <div className={`played-by-label team-${player?.team}`}>
-                                        {player?.name}
-                                    </div>
+                    {/* Show only the strongest in-flight card in the center. */}
+                    <div className="leader-card-area">
+                        <span className="leader-title">Trick Lead</span>
+                        {currentLeaderEntry && currentLeaderPlayer ? (
+                            <>
+                                <div className={`leader-player-label team-${currentLeaderPlayer.team}`}>
+                                    {currentLeaderLabel}
                                 </div>
-                            );
-                        })}
+                                {renderCard(currentLeaderEntry.card, currentLeaderEntry.playerIndex)}
+                            </>
+                        ) : (
+                            <div className="leader-empty-state">
+                                {currentLeaderLabel}
+                            </div>
+                        )}
                     </div>
 
                     {gameState.status === 'round_end' && (

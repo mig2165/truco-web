@@ -17,9 +17,18 @@ interface ChatPanelProps {
     playerTeam: number;
     messages: ChatMessage[];
     onClose: () => void;
+    docked?: boolean;
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ socket, roomId, playerName, playerTeam, messages, onClose }) => {
+export const ChatPanel: React.FC<ChatPanelProps> = ({
+    socket,
+    roomId,
+    playerName,
+    playerTeam,
+    messages,
+    onClose,
+    docked = false
+}) => {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -42,10 +51,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ socket, roomId, playerName
     };
 
     return (
-        <div className="chat-panel glass-panel">
+        <div className={`chat-panel glass-panel ${docked ? 'docked' : ''}`}>
             <div className="chat-header">
                 <span className="chat-title">💬 Chat</span>
-                <button className="chat-close" onClick={onClose}><X size={18} /></button>
+                {!docked && <button className="chat-close" onClick={onClose}><X size={18} /></button>}
             </div>
             <div className="chat-messages">
                 {messages.length === 0 && (
@@ -68,7 +77,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ socket, roomId, playerName
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     maxLength={200}
-                    autoFocus
+                    autoFocus={!docked}
                 />
                 <button className="chat-send-btn" onClick={handleSend} disabled={!input.trim()}>
                     <Send size={16} />

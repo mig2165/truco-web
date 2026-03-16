@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
-import { Users, Info, MessageSquare, Copy, BookOpen } from 'lucide-react';
+import { Users, Info, Copy, BookOpen } from 'lucide-react';
 import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
@@ -38,10 +38,8 @@ export const Room: React.FC = () => {
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
 
-    const [chatOpen, setChatOpen] = useState(false);
     const [rulesOpen, setRulesOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
 
     const playerName = new URLSearchParams(location.search).get('name') || 'Player';
     const isCreating = new URLSearchParams(location.search).get('create') === '1';
@@ -101,11 +99,6 @@ export const Room: React.FC = () => {
         };
         const onChat = (msg: any) => {
             setChatMessages(prev => [...prev, msg]);
-            // If chat panel is closed, increment unread
-            setChatOpen(open => {
-                if (!open) setUnreadCount(c => c + 1);
-                return open;
-            });
         };
 
         socket.on('gameStateUpdate', onStateUpdate);
@@ -298,96 +291,93 @@ export const Room: React.FC = () => {
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />
                     </button>
-                    <button className="icon-btn" onClick={() => { setChatOpen(!chatOpen); setUnreadCount(0); }} title="Chat" style={{ position: 'relative' }}>
-                        <MessageSquare size={20} />
-                        {unreadCount > 0 && <span className="chat-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-                    </button>
                 </div>
             </header>
 
             {/* Main Game Area */}
             <main className="game-area">
-                {isWaiting ? (
-                    <div className="waiting-lobby glass-panel">
-                        <Users size={48} className="lobby-icon" />
-                        <h3>Players ({gameState.players.length}/4)</h3>
+                <div className="room-content-shell">
+                    <div className="room-main-panel">
+                        {isWaiting ? (
+                            <div className="waiting-lobby glass-panel">
+                                <Users size={48} className="lobby-icon" />
+                                <h3>Players ({gameState.players.length}/4)</h3>
 
-                        <div className="teams-grid">
-                            <div className="team-col team-1-col">
-                                <div className="team-col-header">🔵 Team 1</div>
-                                {gameState.players.filter((p: any) => p.team === 1).map((p: any) => (
-                                    <div key={p.id} className="player-pill">
-                                        <span className="player-avatar-sm">{p.name[0]}</span>
-                                        {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                <div className="teams-grid">
+                                    <div className="team-col team-1-col">
+                                        <div className="team-col-header">🔵 Team 1</div>
+                                        {gameState.players.filter((p: any) => p.team === 1).map((p: any) => (
+                                            <div key={p.id} className="player-pill">
+                                                <span className="player-avatar-sm">{p.name[0]}</span>
+                                                {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                            </div>
+                                        ))}
+                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
+                                            <div key={i} className="player-pill empty">Open slot...</div>
+                                        ))}
                                     </div>
-                                ))}
-                                {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
-                                    <div key={i} className="player-pill empty">Open slot...</div>
-                                ))}
-                            </div>
-                            <div className="vs-divider">VS</div>
-                            <div className="team-col team-2-col">
-                                <div className="team-col-header">🔴 Team 2</div>
-                                {gameState.players.filter((p: any) => p.team === 2).map((p: any) => (
-                                    <div key={p.id} className="player-pill">
-                                        <span className="player-avatar-sm">{p.name[0]}</span>
-                                        {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                    <div className="vs-divider">VS</div>
+                                    <div className="team-col team-2-col">
+                                        <div className="team-col-header">🔴 Team 2</div>
+                                        {gameState.players.filter((p: any) => p.team === 2).map((p: any) => (
+                                            <div key={p.id} className="player-pill">
+                                                <span className="player-avatar-sm">{p.name[0]}</span>
+                                                {p.name} {p.id === socket?.id ? '(You)' : ''}
+                                            </div>
+                                        ))}
+                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
+                                            <div key={i} className="player-pill empty">Open slot...</div>
+                                        ))}
                                     </div>
-                                ))}
-                                {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
-                                    <div key={i} className="player-pill empty">Open slot...</div>
-                                ))}
+                                </div>
+
+                                <div className="room-invite">
+                                    <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
+                                    <div className="invite-code" onClick={copyCode}>
+                                        {roomId} {copied ? '✓' : <Copy size={14} />}
+                                    </div>
+                                </div>
+
+                                <ChangelogLauncher
+                                    className="btn changelog-update-btn waiting-lobby-changelog-btn"
+                                    label="UPDATE! View changelog"
+                                />
+
+                                {isDevRoom ? (
+                                    <p className="hint">Server bots are being seated and the round will auto-start.</p>
+                                ) : (
+                                    <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
+                                )}
                             </div>
-                        </div>
-
-                        <div className="room-invite">
-                            <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
-                            <div className="invite-code" onClick={copyCode}>
-                                {roomId} {copied ? '✓' : <Copy size={14} />}
-                            </div>
-                        </div>
-
-                        <ChangelogLauncher
-                            className="btn changelog-update-btn waiting-lobby-changelog-btn"
-                            label="UPDATE! View changelog"
-                        />
-
-                        {isDevRoom ? (
-                            <p className="hint">Server bots are being seated and the round will auto-start.</p>
                         ) : (
-                            <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
+                            <div className={`live-game-shell ${isDevRoom ? 'with-dev-panel' : ''}`}>
+                                <div className="live-game-stage">
+                                    <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
+                                </div>
+                                {isDevRoom && (
+                                    <DevPanel
+                                        gameState={gameState}
+                                        roomId={roomId || ''}
+                                        socket={socket}
+                                    />
+                                )}
+                            </div>
                         )}
                     </div>
-                ) : (
-                    <div className={`live-game-shell ${isDevRoom ? 'with-dev-panel' : ''}`}>
-                        <div className="live-game-stage">
-                            <GameTable gameState={gameState} socket={socket} currentPlayerId={socket?.id} playerName={playerName} onLeave={handleLeave} />
-                        </div>
-                        {isDevRoom && (
-                            <DevPanel
-                                gameState={gameState}
-                                roomId={roomId || ''}
-                                socket={socket}
-                            />
-                        )}
-                    </div>
-                )}
-            </main>
 
-            {/* Chat Panel */}
-            {chatOpen && (
-                <>
-                    <div className="chat-overlay" onClick={() => setChatOpen(false)} />
-                    <ChatPanel
-                        socket={socket}
-                        roomId={roomId || ''}
-                        playerName={playerName}
-                        playerTeam={gameState.players.find((p: any) => p.id === socket?.id)?.team || 0}
-                        messages={chatMessages}
-                        onClose={() => setChatOpen(false)}
-                    />
-                </>
-            )}
+                    <aside className="room-chat-sidebar">
+                        <ChatPanel
+                            socket={socket}
+                            roomId={roomId || ''}
+                            playerName={playerName}
+                            playerTeam={gameState.players.find((p: any) => p.id === socket?.id)?.team || teamPick || 0}
+                            messages={chatMessages}
+                            onClose={() => undefined}
+                            docked
+                        />
+                    </aside>
+                </div>
+            </main>
 
             {/* Rules Panel */}
             {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}

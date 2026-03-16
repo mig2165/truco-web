@@ -128,9 +128,9 @@
 /* ── Table Felt ──────────────────────────────────────── */
 .table-felt {
     position: relative;
-    width: 88vw;
+    width: min(100%, 960px);
     max-width: 960px;
-    height: 68vh;
+    height: min(68vh, 680px);
     max-height: 680px;
     background: radial-gradient(circle at center, #166534 0%, #14532d 100%);
     border: 12px solid #451a03;
@@ -490,6 +490,7 @@
     width: 280px;
     height: 280px;
     position: relative;
+    z-index: 60;
 }
 
 .vira-container {
@@ -515,47 +516,42 @@
     margin-top: 2px;
 }
 
-/* ── Played Cards (center positions) ─────────────────── */
-.played-cards-area {
+/* ── Current Leader Card ─────────────────────────────── */
+.leader-card-area {
     position: relative;
-    width: 160px;
-    height: 160px;
-}
-
-.played-card-slot {
-    position: absolute;
+    z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 180px;
+    min-width: 170px;
+    padding: 0.9rem 1rem;
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.played-bottom {
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 4;
+.leader-title {
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
-.played-top {
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1;
+.leader-player-label,
+.leader-empty-state {
+    max-width: 190px;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
-.played-left {
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 2;
-}
-
-.played-right {
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 3;
+.leader-empty-state {
+    color: rgba(255, 255, 255, 0.72);
+    line-height: 1.4;
 }
 
 .played-by-label {
@@ -574,6 +570,16 @@
 
 .played-by-label.team-2 {
     color: #fca5a5;
+}
+
+.vira-container {
+    z-index: 1;
+}
+
+@media (max-width: 900px) {
+    .table-felt {
+        height: min(60vh, 620px);
+    }
 }
 
 /* ── Round/Game End ──────────────────────────────────── */

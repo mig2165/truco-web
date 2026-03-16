@@ -121,9 +121,36 @@
     flex: 1;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;
     position: relative;
     padding: 2rem;
+    min-height: 0;
+}
+
+.room-content-shell {
+    width: min(1600px, 100%);
+    flex: 1;
+    display: flex;
+    gap: 1rem;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.room-main-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+}
+
+.room-chat-sidebar {
+    width: min(340px, 30vw);
+    min-width: 300px;
+    display: flex;
+    align-self: stretch;
+    min-height: 0;
 }
 
 .waiting-lobby {
@@ -523,6 +550,7 @@
     display: flex;
     justify-content: center;
     align-items: stretch;
+    min-width: 0;
 }
 
 .live-game-stage {
@@ -537,12 +565,26 @@
 }
 
 @media (max-width: 1100px) {
+    .room-content-shell {
+        flex-direction: column;
+    }
+
+    .room-chat-sidebar {
+        width: 100%;
+        min-width: 0;
+        min-height: 320px;
+    }
+
     .live-game-shell.with-dev-panel {
         flex-direction: column;
     }
 }
 
 @media (max-width: 700px) {
+    .game-area {
+        padding: 1rem;
+    }
+
     .team-picker {
         padding: 2rem 1.25rem;
     }
