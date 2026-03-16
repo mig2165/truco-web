@@ -52,15 +52,22 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({ isOpen, onClose 
                         {CHANGELOG.map((entry) => (
                             <section key={`${entry.version}-${entry.date}`} className="changelog-entry">
                                 <div className="changelog-entry-header">
-                                    <span className="changelog-version">v{entry.version}</span>
-                                    <span className="changelog-date">{entry.date}</span>
+                                    <span className="changelog-date-badge">{entry.date}</span>
                                 </div>
                                 <h3>{entry.title}</h3>
-                                <ul>
-                                    {entry.changes.map((change) => (
-                                        <li key={change}>{change}</li>
+                                <div className="changelog-sections">
+                                    {entry.sections.map((section) => (
+                                        <div key={section.title} className="changelog-section">
+                                            <h4>{section.title}</h4>
+                                            <ul>
+                                                {section.items.map((item) => (
+                                                    <li key={item}>{item}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     ))}
-                                </ul>
+                                </div>
+                                {entry.footer && <p className="changelog-footer">{entry.footer}</p>}
                             </section>
                         ))}
                     </div>
