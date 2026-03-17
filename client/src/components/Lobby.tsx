@@ -1,32 +1,159 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Users, Spade, Bug } from 'lucide-react';
+import {
+    Play,
+    Users,
+    Spade,
+    Bug,
+    Eye,
+    Radio,
+    ChevronDown,
+    ChevronUp,
+    Store,
+    Wallet
+} from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
+import { AvatarWithHat } from './AvatarWithHat';
+import { fetchEconomyProfile, syncEconomyProfile } from '../lib/economyApi';
+import { formatTk, type EconomyProfile, type PlayerHat } from '../lib/economy';
+import { getStoredIdentity, updateStoredIdentity } from '../lib/profileStorage';
 import './Lobby.css';
+
+type LobbyRoomPlayer = {
+    name: string;
+    team: 1 | 2;
+    isBot: boolean;
+    hat: PlayerHat;
+};
+
+type LobbyRoom = {
+    roomId: string;
+    status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';
+    hostPlayerName: string | null;
+    isDevRoom: boolean;
+    seatedPlayers: number;
+    openSeats: number;
+    players: LobbyRoomPlayer[];
+};
+
+type LobbySnapshot = {
+    onlinePlayers: number;
+    activeRooms: LobbyRoom[];
+};
 
 export const Lobby: React.FC = () => {
     const { socket, isConnected } = useSocket();
     const navigate = useNavigate();
-    const [playerName, setPlayerName] = useState('');
+    const [identity, setIdentity] = useState(() => getStoredIdentity());
+    const [playerName, setPlayerName] = useState(() => getStoredIdentity().playerName);
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
     const [devSeed, setDevSeed] = useState('');
     const [error, setError] = useState('');
-    const searchParams = new URLSearchParams(window.location.search);
+    const [showActiveRooms, setShowActiveRooms] = useState(false);
+    const [economyProfile, setEconomyProfile] = useState<EconomyProfile | null>(null);
+    const [lobbySnapshot, setLobbySnapshot] = useState<LobbySnapshot>({
+        onlinePlayers: 0,
+        activeRooms: []
+    });
+
+    const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
     const isDevQueryEnabled = searchParams.get('dev') === '1';
     const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
     const devRoomsAvailable = isDevQueryEnabled && (import.meta.env.DEV || isLocalHost || import.meta.env.VITE_ENABLE_DEV_ROOMS === 'true');
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadEconomyProfile = async () => {
+            try {
+                const response = await fetchEconomyProfile(identity.profileId, playerName || identity.playerName);
+                if (!cancelled) {
+                    setEconomyProfile(response.profile);
+                }
+            } catch {
+                if (!cancelled) {
+                    setEconomyProfile(null);
+                }
+            }
+        };
+
+        void loadEconomyProfile();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [identity.playerName, identity.profileId, playerName]);
+
+    useEffect(() => {
+        const syncTimer = window.setTimeout(async () => {
+            try {
+                const nextIdentity = updateStoredIdentity({ playerName });
+                setIdentity(nextIdentity);
+                const response = await syncEconomyProfile({
+                    profileId: nextIdentity.profileId,
+                    displayName: playerName || undefined,
+                    receiptEmail: nextIdentity.receiptEmail || undefined
+                });
+                setEconomyProfile(response.profile);
+            } catch {
+                // Lobby input should stay responsive even if profile sync fails.
+            }
+        }, 250);
+
+        return () => {
+            window.clearTimeout(syncTimer);
+        };
+    }, [playerName]);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleLobbySnapshot = (snapshot: LobbySnapshot) => {
+            setLobbySnapshot(snapshot);
+        };
+
+        socket.on('lobbySnapshot', handleLobbySnapshot);
+        socket.emit('getLobbySnapshot');
+
+        return () => {
+            socket.off('lobbySnapshot', handleLobbySnapshot);
+        };
+    }, [socket]);
+
+    const describeRoomStatus = (room: LobbyRoom) => {
+        if (room.status === 'playing') return 'Playing now';
+        if (room.status === 'dealing') return 'Dealing cards';
+        if (room.status === 'round_end') return 'Between rounds';
+        if (room.status === 'game_end') return 'Match finished';
+        return room.seatedPlayers === 0 ? 'Reserved room' : 'Waiting for players';
+    };
+
+    const persistIdentityForMatch = () => {
+        const trimmedName = playerName.trim();
+        const nextIdentity = updateStoredIdentity({ playerName: trimmedName });
+        setIdentity(nextIdentity);
+        return {
+            ...nextIdentity,
+            playerName: trimmedName
+        };
+    };
 
     const handleCreateRoom = () => {
         if (!playerName.trim()) {
             setError('Please enter your name first');
             return;
         }
-        if (socket) {
-            socket.emit('createRoom', playerName, (roomId: string) => {
-                navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1`);
-            });
-        }
+        if (!socket) return;
+
+        setError('');
+        const nextIdentity = persistIdentityForMatch();
+        socket.emit('createRoom', {
+            playerName: nextIdentity.playerName,
+            profileId: nextIdentity.profileId
+        }, (roomId: string) => {
+            navigate(`/room/${roomId}?name=${encodeURIComponent(nextIdentity.playerName)}&create=1`);
+        });
     };
 
     const handleJoinRoom = () => {
@@ -34,10 +161,10 @@ export const Lobby: React.FC = () => {
             setError('Please enter your name and a room code');
             return;
         }
-        if (socket) {
-            // Validation happens in the room component but we can navigate now
-            navigate(`/room/${roomIdToJoin}?name=${encodeURIComponent(playerName)}`);
-        }
+
+        setError('');
+        const nextIdentity = persistIdentityForMatch();
+        navigate(`/room/${roomIdToJoin}?name=${encodeURIComponent(nextIdentity.playerName)}`);
     };
 
     const handleCreateDevRoom = () => {
@@ -47,8 +174,11 @@ export const Lobby: React.FC = () => {
         }
         if (!socket) return;
 
+        setError('');
+        const nextIdentity = persistIdentityForMatch();
         socket.emit('createRoom', {
-            playerName,
+            playerName: nextIdentity.playerName,
+            profileId: nextIdentity.profileId,
             devMode: true,
             seed: devSeed.trim() || undefined
         }, (roomId: string) => {
@@ -57,7 +187,7 @@ export const Lobby: React.FC = () => {
                 return;
             }
 
-            navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&dev=1`);
+            navigate(`/room/${roomId}?name=${encodeURIComponent(nextIdentity.playerName)}&create=1&dev=1`);
         });
     };
 
@@ -68,11 +198,58 @@ export const Lobby: React.FC = () => {
                     <Spade className="logo-icon" size={48} />
                     <h1>Truco Online</h1>
                     <p className="subtitle">Mão Baixa, Truco, and Manilhas</p>
+                    <div className="lobby-stats" aria-live="polite">
+                        <div className="lobby-stat-pill">
+                            <Radio size={14} />
+                            <span>{lobbySnapshot.onlinePlayers} online</span>
+                        </div>
+                        <div className="lobby-stat-pill">
+                            <Users size={14} />
+                            <span>{lobbySnapshot.activeRooms.length} active rooms</span>
+                        </div>
+                        {economyProfile && (
+                            <div className="lobby-stat-pill">
+                                <Wallet size={14} />
+                                <span>{formatTk(economyProfile.balanceTk)}</span>
+                            </div>
+                        )}
+                    </div>
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
                 </div>
 
                 <div className="lobby-forms">
                     {error && <div className="error-message">{error}</div>}
+
+                    {economyProfile && (
+                        <div className="economy-preview-card">
+                            <div className="economy-preview-card__identity">
+                                <AvatarWithHat
+                                    initial={(economyProfile.displayName || playerName || 'P')[0] ?? 'P'}
+                                    hat={economyProfile.equippedHat}
+                                    size="lg"
+                                    circleClassName="economy-preview-card__avatar"
+                                />
+                                <div>
+                                    <div className="economy-preview-card__name">{economyProfile.displayName}</div>
+                                    <div className="economy-preview-card__hat">Current hat: {economyProfile.equippedHat.name}</div>
+                                </div>
+                            </div>
+                            <div className="economy-preview-card__wallet">
+                                <div>
+                                    <span className="economy-preview-card__label">Wallet</span>
+                                    <strong>{formatTk(economyProfile.balanceTk)}</strong>
+                                </div>
+                                <div className="economy-preview-card__actions">
+                                    <button className="btn btn-secondary" onClick={() => navigate('/store')}>
+                                        <Store size={18} /> Store
+                                    </button>
+                                    <button className="btn btn-primary" onClick={() => navigate('/wallet')}>
+                                        <Wallet size={18} /> Buy Tokens
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="input-group">
                         <label>Your Name</label>
@@ -80,8 +257,8 @@ export const Lobby: React.FC = () => {
                             type="text"
                             placeholder="e.g. Joao"
                             value={playerName}
-                            onChange={(e) => setPlayerName(e.target.value)}
-                            maxLength={15}
+                            onChange={(event) => setPlayerName(event.target.value)}
+                            maxLength={24}
                         />
                     </div>
 
@@ -102,7 +279,7 @@ export const Lobby: React.FC = () => {
                                 type="text"
                                 placeholder="Room Code"
                                 value={roomIdToJoin}
-                                onChange={(e) => setRoomIdToJoin(e.target.value.toUpperCase())}
+                                onChange={(event) => setRoomIdToJoin(event.target.value.toUpperCase())}
                                 maxLength={6}
                             />
                             <button
@@ -113,6 +290,93 @@ export const Lobby: React.FC = () => {
                                 <Users size={20} /> Join Game
                             </button>
                         </div>
+                    </div>
+
+                    <div className="rooms-panel">
+                        <button
+                            type="button"
+                            className="btn btn-secondary rooms-toggle-btn"
+                            onClick={() => setShowActiveRooms((currentValue) => !currentValue)}
+                            disabled={!isConnected}
+                            aria-expanded={showActiveRooms}
+                        >
+                            <Eye size={18} />
+                            {showActiveRooms ? 'Hide Active Rooms' : 'View Active Rooms'}
+                            {showActiveRooms ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        </button>
+
+                        {showActiveRooms && (
+                            <div className="rooms-panel-body glass-panel">
+                                {lobbySnapshot.activeRooms.length === 0 ? (
+                                    <p className="rooms-empty-state">No rooms are active right now.</p>
+                                ) : (
+                                    <div className="rooms-list">
+                                        {lobbySnapshot.activeRooms.map((room) => (
+                                            <article key={room.roomId} className="room-summary-card">
+                                                <div className="room-summary-header">
+                                                    <div>
+                                                        <div className="room-summary-title-row">
+                                                            <h3>{room.roomId}</h3>
+                                                            {room.isDevRoom && <span className="room-dev-badge">DEV</span>}
+                                                        </div>
+                                                        <p className="room-summary-meta">{describeRoomStatus(room)}</p>
+                                                    </div>
+                                                    <div className="room-summary-count">
+                                                        <span>{room.seatedPlayers}/4 seated</span>
+                                                        {room.openSeats > 0 && <small>{room.openSeats} open</small>}
+                                                    </div>
+                                                </div>
+
+                                                {room.hostPlayerName && (
+                                                    <p className="room-host-line">Host: {room.hostPlayerName}</p>
+                                                )}
+
+                                                {room.players.length > 0 ? (
+                                                    <div className="room-team-grid">
+                                                        <div className="room-team-column">
+                                                            <p className="room-team-label">Team 1</p>
+                                                            {room.players.filter((player) => player.team === 1).map((player) => (
+                                                                <span key={`${room.roomId}-${player.team}-${player.name}`} className="room-player-chip">
+                                                                    <AvatarWithHat
+                                                                        initial={player.name[0] ?? '?'}
+                                                                        hat={player.hat}
+                                                                        size="xs"
+                                                                        circleClassName="room-player-chip__avatar"
+                                                                    />
+                                                                    <span>
+                                                                        {player.name}
+                                                                        {player.isBot ? ' (bot)' : ''}
+                                                                    </span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                        <div className="room-team-column">
+                                                            <p className="room-team-label">Team 2</p>
+                                                            {room.players.filter((player) => player.team === 2).map((player) => (
+                                                                <span key={`${room.roomId}-${player.team}-${player.name}`} className="room-player-chip">
+                                                                    <AvatarWithHat
+                                                                        initial={player.name[0] ?? '?'}
+                                                                        hat={player.hat}
+                                                                        size="xs"
+                                                                        circleClassName="room-player-chip__avatar"
+                                                                    />
+                                                                    <span>
+                                                                        {player.name}
+                                                                        {player.isBot ? ' (bot)' : ''}
+                                                                    </span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <p className="room-player-placeholder">No one has joined this room yet.</p>
+                                                )}
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {devRoomsAvailable && (

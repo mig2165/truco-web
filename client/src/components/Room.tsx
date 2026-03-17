@@ -8,12 +8,16 @@ import { ChatPanel } from './ChatPanel';
 import { RulesPanel } from './RulesPanel';
 import { DevPanel } from './DevPanel';
 import { ChangelogLauncher } from './ChangelogLauncher';
+import { AvatarWithHat } from './AvatarWithHat';
+import { type PlayerHat } from '../lib/economy';
+import { getStoredIdentity, updateStoredIdentity } from '../lib/profileStorage';
 
 type RoomPreviewPlayer = {
     id: string;
     name: string;
     team: number;
     isBot?: boolean;
+    hat: PlayerHat;
 };
 
 type RoomPreviewState = {
@@ -37,12 +41,21 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
+    const hasLeftRoom = useRef(false);
 
     const [rulesOpen, setRulesOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
+    const [identity, setIdentity] = useState(() => getStoredIdentity());
+    const searchParams = new URLSearchParams(location.search);
+    const playerNameFromUrl = searchParams.get('name');
+    const playerName = playerNameFromUrl || identity.playerName || 'Player';
+    const isCreating = searchParams.get('create') === '1';
 
-    const playerName = new URLSearchParams(location.search).get('name') || 'Player';
-    const isCreating = new URLSearchParams(location.search).get('create') === '1';
+    useEffect(() => {
+        if (!playerNameFromUrl) return;
+        const nextIdentity = updateStoredIdentity({ playerName: playerNameFromUrl });
+        setIdentity(nextIdentity);
+    }, [playerNameFromUrl]);
 
     // Auto-pick Team 1 for the room creator; others see team selection
     useEffect(() => {
@@ -63,13 +76,15 @@ export const Room: React.FC = () => {
                     id: player.id,
                     name: player.name,
                     team: player.team,
-                    isBot: player.isBot
+                    isBot: player.isBot,
+                    hat: player.hat
                 }))
             });
 
             // Once the server echoes us back in the roster, we know the join actually stuck.
             if (state.players.some((player: any) => player.id === socket.id)) {
                 hasJoined.current = true;
+                hasLeftRoom.current = false;
                 setJoinedRoom(true);
                 setJoinInFlight(false);
             }
@@ -126,10 +141,39 @@ export const Room: React.FC = () => {
         }
 
         setJoinInFlight(true);
-        socket.emit('joinRoom', roomId, playerName, teamPick);
-    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
+        socket.emit('joinRoom', {
+            roomId,
+            playerName,
+            chosenTeam: teamPick,
+            profileId: identity.profileId
+        });
+    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate, identity.profileId]);
+
+    const leaveRoomIfJoined = () => {
+        if (!socket || !roomId || !hasJoined.current || hasLeftRoom.current) return;
+
+        // Keep leave semantics tied to the room screen itself. If this component
+        // goes away, the seat should be released even though the app socket lives on.
+        socket.emit('leaveRoom', roomId);
+        hasLeftRoom.current = true;
+        hasJoined.current = false;
+        setJoinedRoom(false);
+        setJoinInFlight(false);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (!socket || !roomId || !hasJoined.current || hasLeftRoom.current) return;
+
+            // Route changes keep the socket alive, so the unmount itself must release the seat.
+            socket.emit('leaveRoom', roomId);
+            hasLeftRoom.current = true;
+            hasJoined.current = false;
+        };
+    }, [socket, roomId]);
 
     const handleLeave = () => {
+        leaveRoomIfJoined();
         navigate('/');
     };
 
@@ -173,8 +217,16 @@ export const Room: React.FC = () => {
         <>
             {players.map((player) => (
                 <div key={player.id} className="player-pill">
-                    <span className="player-avatar-sm">{player.name[0]}</span>
-                    {player.name}
+                    <AvatarWithHat
+                        initial={player.name[0] ?? '?'}
+                        hat={player.hat}
+                        size="sm"
+                        circleClassName="player-avatar-sm"
+                    />
+                    <span>
+                        {player.name}
+                        {player.isBot ? ' (bot)' : ''}
+                    </span>
                 </div>
             ))}
             {Array.from({ length: Math.max(0, 2 - players.length) }).map((_, index) => (

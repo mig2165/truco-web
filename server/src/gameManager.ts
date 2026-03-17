@@ -4,6 +4,11 @@ import {
     DebugCommand,
     GameState,
     Player,
+    Rank,
+    Suit,
+    RANKS,
+    SUITS,
+    buildCard,
     createDeck,
     shuffleDeck,
     getManilhaRank,
@@ -11,9 +16,35 @@ import {
     compareCards
 } from './gameLogic';
 import { bugReportManager } from './bugReport';
+import { EconomyService, type HatSnapshot, WIN_REWARD_TK } from './economy';
 
-type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string };
+type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string; profileId?: string };
+type JoinRoomPayload =
+    | { roomId: string; playerName: string; chosenTeam: 1 | 2; profileId?: string }
+    | { roomId: string; playerName: string; team: 1 | 2; profileId?: string };
 type ScheduledTask = ReturnType<typeof setTimeout>;
+
+type LobbyRoomPlayerSnapshot = {
+    name: string;
+    team: 1 | 2;
+    isBot: boolean;
+    hat: HatSnapshot;
+};
+
+type LobbyRoomSnapshot = {
+    roomId: string;
+    status: GameState['status'];
+    hostPlayerName: string | null;
+    isDevRoom: boolean;
+    seatedPlayers: number;
+    openSeats: number;
+    players: LobbyRoomPlayerSnapshot[];
+};
+
+type LobbySnapshot = {
+    onlinePlayers: number;
+    activeRooms: LobbyRoomSnapshot[];
+};
 
 type BotAction = {
     description: string;
@@ -25,6 +56,7 @@ const DEFAULT_BOT_SPEED_MS = 600;
 const MAX_DEV_LOG_ENTRIES = 30;
 const ENDGAME_ENTRY_SCORE = 11;
 const GAME_WIN_SCORE = 12;
+const DEFAULT_SECRET_DEBUG_CODE = 'truco-local-debug';
 
 export class TrucoGameManager {
     private rooms: Map<string, GameState> = new Map();
@@ -32,11 +64,19 @@ export class TrucoGameManager {
     private botTimers: Map<string, ScheduledTask> = new Map();
     private roomTasks: Map<string, Set<ScheduledTask>> = new Map();
     private roomRngs: Map<string, () => number> = new Map();
+    private secretDebugPlayers: Map<string, Set<string>> = new Map();
     private devRoomsEnabled: boolean;
+    private secretDebugEnabled: boolean;
+    private secretDebugCode: string;
+    private economy: EconomyService;
 
-    constructor(io: Server) {
+    constructor(io: Server, economy: EconomyService) {
         this.io = io;
+        this.economy = economy;
         this.devRoomsEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_ROOMS === 'true';
+        // The code stays server-only and the entire feature hard-disables in production.
+        this.secretDebugEnabled = process.env.NODE_ENV !== 'production';
+        this.secretDebugCode = process.env.SECRET_DEBUG_CODE?.trim() || DEFAULT_SECRET_DEBUG_CODE;
     }
 
     public getGameState(roomId: string): GameState | undefined {
@@ -47,16 +87,33 @@ export class TrucoGameManager {
         socket.on('createRoom', (payload: CreateRoomPayload, callback: (roomId: string) => void) => {
             this.createRoom(socket, payload, callback);
         });
+        socket.on('getLobbySnapshot', () => this.sendLobbySnapshot(socket));
         socket.on('getRoomPreview', (roomId: string) => this.sendRoomPreview(socket, roomId));
-        socket.on('joinRoom', (roomId: string, playerName: string, chosenTeam: 1 | 2) => this.joinRoom(socket, roomId, playerName, chosenTeam));
+        socket.on('joinRoom', (roomIdOrPayload: string | JoinRoomPayload, playerName?: string, chosenTeam?: 1 | 2, profileId?: string) => {
+            try {
+                this.joinRoom(socket, roomIdOrPayload, playerName, chosenTeam, profileId);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Unable to join room.';
+                socket.emit('error', message);
+            }
+        });
+        socket.on('leaveRoom', (roomId: string) => this.leaveRoom(socket, roomId));
         socket.on('startRematch', (roomId: string) => this.startRematch(socket, roomId));
         socket.on('playCard', (roomId: string, cardIndex: number) => this.handlePlayCard(socket, roomId, cardIndex));
         socket.on('call', (roomId: string, callType: string) => this.handleCall(socket, roomId, callType));
+        socket.on('activateSecretDebug', (roomId: string, secretCode: string) => this.activateSecretDebug(socket, roomId, secretCode));
         socket.on('debugCommand', (roomId: string, command: DebugCommand) => this.handleDebugCommand(socket, roomId, command));
         socket.on('debugSetScore', (roomId: string, score: { team1: number; team2: number }) => {
             this.handleDebugCommand(socket, roomId, { type: 'setScore', score });
         });
         socket.on('disconnect', () => this.handleDisconnect(socket));
+
+        // Prime newly connected clients with the current room list and presence counters.
+        this.sendLobbySnapshot(socket);
+    }
+
+    public broadcastLobbySnapshot() {
+        this.io.emit('lobbySnapshot', this.buildLobbySnapshot());
     }
 
     private createRoom(socket: Socket, payload: CreateRoomPayload, callback: (roomId: string) => void) {
@@ -74,12 +131,17 @@ export class TrucoGameManager {
         state.hostPlayerName = normalized.playerName;
         this.rooms.set(roomId, state);
 
+        // Profile identity is created before the player actually joins so the room preview
+        // already reflects the host's current cosmetic loadout.
+        this.economy.syncProfile(normalized.profileId ?? socket.id, normalized.playerName);
+
         if (state.dev?.enabled) {
             this.roomRngs.set(roomId, this.createSeededRng(state.dev.seed));
             this.appendDevLog(state, `Reserved dev room for ${normalized.playerName || 'player'} (seed: ${state.dev.seed}).`);
         }
 
         callback(roomId);
+        this.broadcastLobbySnapshot();
     }
 
     private normalizeCreateRoomPayload(payload: CreateRoomPayload) {
@@ -94,7 +156,35 @@ export class TrucoGameManager {
         return {
             playerName: payload.playerName ?? 'Player',
             devMode: Boolean(payload.devMode),
-            seed: payload.seed?.trim()
+            seed: payload.seed?.trim(),
+            profileId: payload.profileId?.trim()
+        };
+    }
+
+    private normalizeJoinRoomPayload(
+        roomIdOrPayload: string | JoinRoomPayload,
+        playerName?: string,
+        chosenTeam?: 1 | 2,
+        profileId?: string
+    ) {
+        if (typeof roomIdOrPayload === 'string') {
+            if (!playerName || !chosenTeam) {
+                throw new Error('Missing join payload.');
+            }
+
+            return {
+                roomId: roomIdOrPayload,
+                playerName,
+                chosenTeam,
+                profileId
+            };
+        }
+
+        return {
+            roomId: roomIdOrPayload.roomId,
+            playerName: roomIdOrPayload.playerName,
+            chosenTeam: 'chosenTeam' in roomIdOrPayload ? roomIdOrPayload.chosenTeam : roomIdOrPayload.team,
+            profileId: roomIdOrPayload.profileId
         };
     }
 
@@ -121,6 +211,7 @@ export class TrucoGameManager {
             notifications: [],
             _phase: 'WAITING_FOR_HAND_PHASE',
             _maoActive: false,
+            _matchRewardGranted: false,
             dev: devSeed
                 ? {
                     enabled: true,
@@ -140,6 +231,7 @@ export class TrucoGameManager {
             hand: [],
             team,
             isBot: true,
+            hat: this.economy.getEquippedHat(),
             exposedHand: false,
             maoBaixaReady: false
         };
@@ -159,7 +251,9 @@ export class TrucoGameManager {
         state.dev.log = [...state.dev.log.slice(-(MAX_DEV_LOG_ENTRIES - 1)), `[${stamp}] ${message}`];
     }
 
-    private joinRoom(socket: Socket, roomId: string, playerName: string, chosenTeam: 1 | 2) {
+    private joinRoom(socket: Socket, roomIdOrPayload: string | JoinRoomPayload, playerName?: string, chosenTeam?: 1 | 2, profileId?: string) {
+        const normalizedJoin = this.normalizeJoinRoomPayload(roomIdOrPayload, playerName, chosenTeam, profileId);
+        const roomId = normalizedJoin.roomId;
         let state = this.rooms.get(roomId);
         if (!state) {
             state = this.createEmptyState(roomId);
@@ -172,7 +266,7 @@ export class TrucoGameManager {
         }
 
         if (state.dev?.enabled) {
-            this.joinDevRoom(state, socket, playerName);
+            this.joinDevRoom(state, socket, normalizedJoin.playerName, normalizedJoin.profileId);
             return;
         }
 
@@ -185,12 +279,12 @@ export class TrucoGameManager {
         const team2Count = state.players.filter((player) => player.team === 2).length;
 
         // Keep team selection explicit so the UI can behave like a true seat picker.
-        if (chosenTeam === 1 && team1Count >= 2) {
+        if (normalizedJoin.chosenTeam === 1 && team1Count >= 2) {
             socket.emit('error', 'Team 1 is full.');
             return;
         }
 
-        if (chosenTeam === 2 && team2Count >= 2) {
+        if (normalizedJoin.chosenTeam === 2 && team2Count >= 2) {
             socket.emit('error', 'Team 2 is full.');
             return;
         }
@@ -198,23 +292,27 @@ export class TrucoGameManager {
         // Joining a fresh room code should still establish a host for later rematches.
         if (!state.hostPlayerId) {
             state.hostPlayerId = socket.id;
-            state.hostPlayerName = playerName;
+            state.hostPlayerName = normalizedJoin.playerName;
         }
 
         state.players.push({
             id: socket.id,
-            name: playerName,
+            profileId: normalizedJoin.profileId,
+            name: normalizedJoin.playerName,
             hand: [],
-            team: chosenTeam,
+            team: normalizedJoin.chosenTeam,
             isBot: false,
+            hat: this.economy.getEquippedHat(normalizedJoin.profileId, normalizedJoin.playerName),
             exposedHand: false,
             maoBaixaReady: false
         });
 
         // Keep the creator as the room host while refreshing the label clients can show.
         if (state.hostPlayerId === socket.id) {
-            state.hostPlayerName = playerName;
+            state.hostPlayerName = normalizedJoin.playerName;
         }
+
+        this.economy.syncProfile(normalizedJoin.profileId ?? socket.id, normalizedJoin.playerName);
 
         socket.join(roomId);
 
@@ -240,12 +338,53 @@ export class TrucoGameManager {
                 id: player.id,
                 name: player.name,
                 team: player.team,
-                isBot: player.isBot
+                isBot: player.isBot,
+                hat: player.hat
             }))
         });
     }
 
-    private joinDevRoom(state: GameState, socket: Socket, playerName: string) {
+    private sendLobbySnapshot(socket: Socket) {
+        socket.emit('lobbySnapshot', this.buildLobbySnapshot());
+    }
+
+    private buildLobbySnapshot(): LobbySnapshot {
+        const activeRooms = Array.from(this.rooms.values())
+            .filter((state) => state.players.length > 0 || Boolean(state.hostPlayerName))
+            .map((state) => ({
+                roomId: state.roomId,
+                status: state.status,
+                hostPlayerName: state.hostPlayerName,
+                isDevRoom: Boolean(state.dev?.enabled),
+                seatedPlayers: state.players.length,
+                openSeats: Math.max(0, 4 - state.players.length),
+                players: state.players.map((player) => ({
+                    name: player.name,
+                    // Public lobby data only needs the fixed two-team seating model.
+                    team: player.team as 1 | 2,
+                    isBot: player.isBot,
+                    hat: player.hat
+                }))
+            }))
+            .sort((leftRoom, rightRoom) => {
+                if (leftRoom.status !== rightRoom.status) {
+                    return leftRoom.status === 'playing' ? -1 : 1;
+                }
+
+                if (leftRoom.seatedPlayers !== rightRoom.seatedPlayers) {
+                    return rightRoom.seatedPlayers - leftRoom.seatedPlayers;
+                }
+
+                return leftRoom.roomId.localeCompare(rightRoom.roomId);
+            });
+
+        return {
+            onlinePlayers: this.io.sockets.sockets.size,
+            activeRooms
+        };
+    }
+
+    private joinDevRoom(state: GameState, socket: Socket, playerName: string, profileId?: string) {
         const humanPlayers = state.players.filter((player) => !player.isBot);
         if (humanPlayers.length >= 1) {
             socket.emit('error', 'Dev solo rooms only support one human player.');
@@ -255,14 +394,18 @@ export class TrucoGameManager {
         state.players = [
             {
                 id: socket.id,
+                profileId,
                 name: playerName,
                 hand: [],
                 team: 1,
                 isBot: false,
+                hat: this.economy.getEquippedHat(profileId, playerName),
                 exposedHand: false,
                 maoBaixaReady: false
             }
         ];
+
+        this.economy.syncProfile(profileId ?? socket.id, playerName);
 
         socket.join(state.roomId);
 
@@ -273,6 +416,14 @@ export class TrucoGameManager {
 
         this.appendDevLog(state, `${playerName} joined the dev room. Filling the remaining seats with server bots.`);
         this.startGame(state.roomId);
+    }
+
+    private leaveRoom(socket: Socket, roomId: string) {
+        const state = this.rooms.get(roomId);
+        if (!state) return;
+
+        this.removeHumanPlayerFromRoom(roomId, socket.id);
+        socket.leave(roomId);
     }
 
     private startRematch(socket: Socket, roomId: string) {
@@ -294,12 +445,14 @@ export class TrucoGameManager {
         state.players = [team1Players[0]!, team2Players[0]!, team1Players[1]!, team2Players[1]!];
         state.startingPlayerIndex = 0;
         state.points = { team1: 0, team2: 0 };
+        state._matchRewardGranted = false;
 
         if (state.dev?.enabled && !this.roomRngs.has(roomId)) {
             this.roomRngs.set(roomId, this.createSeededRng(state.dev.seed));
         }
 
         this.appendDevLog(state, 'Starting a fresh match.');
+        this.broadcastLobbySnapshot();
         this.startNewRound(state);
     }
 
@@ -342,9 +495,7 @@ export class TrucoGameManager {
         this.appendDevLog(state, `Starting round at ${state.points.team1}-${state.points.team2}.`);
 
         if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
-            state.status = 'game_end';
-            state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
-            this.emitState(state);
+            this.finalizeGame(state, state.points.team1 >= GAME_WIN_SCORE ? 1 : 2);
             return;
         }
 
@@ -748,9 +899,7 @@ export class TrucoGameManager {
 
         this.scheduleRoomTask(state.roomId, 3000, () => {
             if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
-                state.status = 'game_end';
-                state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
-                this.emitState(state);
+                this.finalizeGame(state, state.points.team1 >= GAME_WIN_SCORE ? 1 : 2);
                 return;
             }
 
@@ -771,9 +920,7 @@ export class TrucoGameManager {
             this.emitState(state);
 
             this.scheduleRoomTask(state.roomId, 3000, () => {
-                state.status = 'game_end';
-                state.winnerTeam = winningTeam;
-                this.emitState(state);
+                this.finalizeGame(state, winningTeam);
             });
             return;
         }
@@ -789,9 +936,7 @@ export class TrucoGameManager {
                 this.emitState(state);
 
                 this.scheduleRoomTask(state.roomId, 3000, () => {
-                    state.status = 'game_end';
-                    state.winnerTeam = winningTeam;
-                    this.emitState(state);
+                    this.finalizeGame(state, winningTeam);
                 });
                 return;
             }
@@ -806,9 +951,7 @@ export class TrucoGameManager {
 
             this.scheduleRoomTask(state.roomId, 3000, () => {
                 if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
-                    state.status = 'game_end';
-                    state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
-                    this.emitState(state);
+                    this.finalizeGame(state, state.points.team1 >= GAME_WIN_SCORE ? 1 : 2);
                     return;
                 }
 
@@ -839,13 +982,40 @@ export class TrucoGameManager {
         });
     }
 
+    private finalizeGame(state: GameState, winningTeam: number) {
+        state.status = 'game_end';
+        state.winnerTeam = winningTeam;
+
+        if (!state._matchRewardGranted) {
+            const winnerProfileIds = state.players
+                .filter((player) => !player.isBot && player.team === winningTeam && player.profileId)
+                .map((player) => player.profileId!);
+
+            this.economy.rewardMatchWin(winnerProfileIds, WIN_REWARD_TK);
+            state._matchRewardGranted = true;
+            this.appendDevLog(state, `Awarded ${WIN_REWARD_TK}tk to each human player on Team ${winningTeam}.`);
+        }
+
+        this.emitState(state);
+    }
+
     private emitState(state: GameState) {
         for (const viewer of state.players) {
             if (viewer.isBot) continue;
 
+            const secretDebugActive = this.isSecretDebugPlayer(state.roomId, viewer.id);
+
             const privateState = {
                 ...state,
+                secretDebug: {
+                    available: this.secretDebugEnabled,
+                    active: secretDebugActive
+                },
                 players: state.players.map((player) => {
+                    if (secretDebugActive) {
+                        return { ...player, hand: player.hand };
+                    }
+
                     if (state.maoDeFerroActive) {
                         return {
                             ...player,
@@ -867,35 +1037,105 @@ export class TrucoGameManager {
             this.io.to(viewer.id).emit('gameStateUpdate', privateState);
         }
 
+        // Mirror room roster/status changes to lobby viewers without requiring a refresh.
+        this.broadcastLobbySnapshot();
         this.maybeScheduleBotAction(state);
     }
 
-    private handleDebugCommand(socket: Socket, roomId: string, command: DebugCommand) {
+    private activateSecretDebug(socket: Socket, roomId: string, secretCode: string) {
         const state = this.rooms.get(roomId);
-        if (!state?.dev?.enabled) {
-            socket.emit('error', 'Debug commands are only available in dev rooms.');
+        if (!state) return;
+
+        if (!this.secretDebugEnabled) {
+            socket.emit('error', 'Secret debug mode is disabled on this server.');
             return;
         }
 
         const actor = state.players.find((player) => player.id === socket.id);
         if (!actor || actor.isBot) {
-            socket.emit('error', 'Only the human player can use dev room debug commands.');
+            socket.emit('error', 'Only seated human players can unlock secret debug mode.');
+            return;
+        }
+
+        if (secretCode.trim() !== this.secretDebugCode) {
+            socket.emit('error', 'Invalid secret debug code.');
+            return;
+        }
+
+        const authorizedPlayers = this.secretDebugPlayers.get(roomId) ?? new Set<string>();
+        authorizedPlayers.add(socket.id);
+        this.secretDebugPlayers.set(roomId, authorizedPlayers);
+
+        this.appendDevLog(state, `${actor.name} unlocked secret debug mode.`);
+        this.emitState(state);
+    }
+
+    private isSecretDebugPlayer(roomId: string, playerId: string) {
+        return this.secretDebugPlayers.get(roomId)?.has(playerId) ?? false;
+    }
+
+    private canUseDebugTools(state: GameState, playerId: string) {
+        return Boolean(state.dev?.enabled) || this.isSecretDebugPlayer(state.roomId, playerId);
+    }
+
+    private isRank(value: string): value is Rank {
+        return RANKS.includes(value as Rank);
+    }
+
+    private isSuit(value: string): value is Suit {
+        return SUITS.includes(value as Suit);
+    }
+
+    private rebuildDebugHand(cards: { suit: string; rank: string }[], manilhaRank: Rank | null) {
+        return cards.map((card) => {
+            if (!this.isRank(card.rank) || !this.isSuit(card.suit)) {
+                throw new Error('Invalid card in debug hand update.');
+            }
+
+            return buildCard(card.rank, card.suit, manilhaRank);
+        });
+    }
+
+    private handleDebugCommand(socket: Socket, roomId: string, command: DebugCommand) {
+        const state = this.rooms.get(roomId);
+        if (!state) return;
+
+        if (!this.canUseDebugTools(state, socket.id)) {
+            socket.emit('error', 'Debug commands are unavailable for this player.');
+            return;
+        }
+
+        const actor = state.players.find((player) => player.id === socket.id);
+        if (!actor || actor.isBot) {
+            socket.emit('error', 'Only seated human players can use debug commands.');
             return;
         }
 
         switch (command.type) {
             case 'pauseBots':
+                if (!state.dev?.enabled) {
+                    socket.emit('error', 'Bot controls are only available in dev rooms.');
+                    return;
+                }
                 state.dev.botsPaused = true;
                 this.clearBotTimer(roomId);
                 this.appendDevLog(state, `${actor.name} paused the bots.`);
                 this.emitState(state);
                 return;
             case 'resumeBots':
+                if (!state.dev?.enabled) {
+                    socket.emit('error', 'Bot controls are only available in dev rooms.');
+                    return;
+                }
                 state.dev.botsPaused = false;
                 this.appendDevLog(state, `${actor.name} resumed the bots.`);
                 this.emitState(state);
                 return;
             case 'stepBots': {
+                if (!state.dev?.enabled) {
+                    socket.emit('error', 'Bot controls are only available in dev rooms.');
+                    return;
+                }
                 this.clearBotTimer(roomId);
                 const actionTaken = this.runNextBotAction(roomId, true);
                 if (!actionTaken) {
@@ -905,6 +1145,10 @@ export class TrucoGameManager {
                 return;
             }
             case 'setBotSpeed':
+                if (!state.dev?.enabled) {
+                    socket.emit('error', 'Bot controls are only available in dev rooms.');
+                    return;
+                }
                 state.dev.botSpeedMs = this.clampBotSpeed(command.speedMs);
                 this.appendDevLog(state, `${actor.name} changed bot speed to ${state.dev.botSpeedMs}ms.`);
                 this.emitState(state);
@@ -920,6 +1164,35 @@ export class TrucoGameManager {
                 this.appendDevLog(state, `${actor.name} forced the score to ${state.points.team1}-${state.points.team2}. Resetting into a fresh round.`);
                 this.startNewRound(state);
                 return;
+            case 'setPlayerHand': {
+                const targetPlayer = state.players.find((player) => player.id === command.playerId);
+                if (!targetPlayer) {
+                    socket.emit('error', 'That player is no longer seated in the room.');
+                    return;
+                }
+
+                if (!Array.isArray(command.cards)) {
+                    socket.emit('error', 'Debug hand edits require a full replacement hand.');
+                    return;
+                }
+
+                if (command.cards.length !== targetPlayer.hand.length) {
+                    socket.emit('error', 'Debug hand edits must keep the current hand size unchanged.');
+                    return;
+                }
+
+                try {
+                    targetPlayer.hand = this.rebuildDebugHand(command.cards, state.manilhaRank);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Unable to update that debug hand.';
+                    socket.emit('error', message);
+                    return;
+                }
+
+                this.appendDevLog(state, `${actor.name} changed ${targetPlayer.name}'s hand.`);
+                this.emitState(state);
+                return;
+            }
         }
     }
 
@@ -1111,17 +1384,97 @@ export class TrucoGameManager {
         this.botTimers.delete(roomId);
     }
 
+    private removeHumanPlayerFromRoom(roomId: string, playerId: string) {
+        const state = this.rooms.get(roomId);
+        if (!state) return;
+
+        const leavingPlayerIndex = state.players.findIndex((player) => player.id === playerId && !player.isBot);
+        if (leavingPlayerIndex === -1) return;
+
+        const leavingPlayer = state.players[leavingPlayerIndex];
+        if (!leavingPlayer) return;
+
+        // Any queued round transitions are invalid once the seated roster changes.
+        this.clearRoomTasks(roomId);
+        this.clearBotTimer(roomId);
+        this.secretDebugPlayers.get(roomId)?.delete(playerId);
+        state.players.splice(leavingPlayerIndex, 1);
+
+        if (state.dev?.enabled) {
+            this.roomRngs.delete(roomId);
+            this.secretDebugPlayers.delete(roomId);
+            this.rooms.delete(roomId);
+            this.broadcastLobbySnapshot();
+            return;
+        }
+
+        if (state.players.length === 0) {
+            this.roomRngs.delete(roomId);
+            this.secretDebugPlayers.delete(roomId);
+            this.rooms.delete(roomId);
+            this.broadcastLobbySnapshot();
+            return;
+        }
+
+        this.refreshHostAssignment(state);
+
+        // Public matches should not keep running with a missing seat. Reset to the
+        // waiting-room state so the next join starts from a clean table.
+        this.resetRoomToWaiting(state);
+        this.appendDevLog(state, `${leavingPlayer.name} left the room.`);
+        this.emitState(state);
+    }
+
+    private refreshHostAssignment(state: GameState) {
+        const nextHost = state.players.find((player) => !player.isBot) ?? null;
+        state.hostPlayerId = nextHost?.id ?? null;
+        state.hostPlayerName = nextHost?.name ?? null;
+    }
+
+    private resetRoomToWaiting(state: GameState) {
+        const waitingState = this.createEmptyState(state.roomId);
+
+        state.players = state.players.map((player) => ({
+            ...player,
+            hand: [],
+            exposedHand: false,
+            maoBaixaReady: false
+        }));
+        state.deck = waitingState.deck;
+        state.vira = waitingState.vira;
+        state.manilhaRank = waitingState.manilhaRank;
+        state.currentTurnIndex = waitingState.currentTurnIndex;
+        state.points = waitingState.points;
+        state.roundPoints = waitingState.roundPoints;
+        state.tricks = waitingState.tricks;
+        state.table = waitingState.table;
+        state.startingPlayerIndex = waitingState.startingPlayerIndex;
+        state.status = waitingState.status;
+        state.winnerTeam = waitingState.winnerTeam;
+        state.callState = waitingState.callState;
+        state.lastTrickWinner = waitingState.lastTrickWinner;
+        state.lastTrickWinnerName = waitingState.lastTrickWinnerName;
+        state.notifications = waitingState.notifications;
+        state._phase = waitingState._phase;
+        state._maoActive = waitingState._maoActive;
+        state._maoCallerId = waitingState._maoCallerId;
+        state._maoType = waitingState._maoType;
+        state._matchRewardGranted = waitingState._matchRewardGranted;
+        state.maoDeOnzeActive = waitingState.maoDeOnzeActive;
+        state.maoDeOnzeTeam = waitingState.maoDeOnzeTeam;
+        state.maoDeFerroActive = waitingState.maoDeFerroActive;
+    }
+
     private handleDisconnect(socket: Socket) {
         for (const [roomId, state] of this.rooms.entries()) {
             const humanIndex = state.players.findIndex((player) => player.id === socket.id && !player.isBot);
-            if (humanIndex === -1 || !state.dev?.enabled) continue;
+            if (humanIndex === -1) continue;
 
-            this.clearRoomTasks(roomId);
-            this.clearBotTimer(roomId);
-            this.roomRngs.delete(roomId);
-            this.rooms.delete(roomId);
+            this.removeHumanPlayerFromRoom(roomId, socket.id);
             return;
         }
+
+        this.broadcastLobbySnapshot();
     }
 
     private clampScore(score: number) {

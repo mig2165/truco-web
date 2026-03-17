@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getApiBaseUrl } from '../lib/api';
 
 interface SocketContextContextType {
     socket: Socket | null;
@@ -18,11 +19,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const [isConnected, setIsConnected] = useState(false);
 
     useEffect(() => {
-        // In dev (Vite on :5000), connect to the separate backend on :3001
-        // In production / ngrok (served from Express), connect to same origin
-        const serverUrl = import.meta.env.VITE_API_URL
-            || (window.location.port === '5000' ? 'http://localhost:3001' : window.location.origin);
-        const newSocket = io(serverUrl);
+        // Use the same origin rules for sockets and REST so both stay aligned.
+        const newSocket = io(getApiBaseUrl());
 
         newSocket.on('connect', () => {
             setIsConnected(true);

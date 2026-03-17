@@ -1,3 +1,5 @@
+import type { HatSnapshot } from './economy';
+
 export type Suit = 'diamonds' | 'spades' | 'hearts' | 'clubs';
 export type Rank = '4' | '5' | '6' | '7' | 'Q' | 'J' | 'K' | 'A' | '2' | '3';
 
@@ -11,10 +13,12 @@ export interface Card {
 
 export type Player = {
     id: string;
+    profileId?: string;
     name: string;
     hand: Card[];
     team: number; // 1 or 2
     isBot: boolean;
+    hat: HatSnapshot;
     exposedHand: boolean; // True if player lied on Mao Baixa/Real and their hand must be shown to all
     maoBaixaReady: boolean; // True if player has confirmed keeping their hand
 };
@@ -24,7 +28,8 @@ export type DebugCommand =
     | { type: 'resumeBots' }
     | { type: 'stepBots' }
     | { type: 'setBotSpeed'; speedMs: number }
-    | { type: 'setScore'; score: { team1: number; team2: number } };
+    | { type: 'setScore'; score: { team1: number; team2: number } }
+    | { type: 'setPlayerHand'; playerId: string; cards: { suit: Suit; rank: Rank }[] };
 
 export type DevState = {
     enabled: boolean;
@@ -65,6 +70,7 @@ export interface GameState {
     _maoActive?: boolean;
     _maoCallerId?: string;
     _maoType?: 'mao_baixa' | 'mao_real';
+    _matchRewardGranted?: boolean;
 
     // Mão de Onze / Mão de Ferro
     maoDeOnzeActive?: boolean;
@@ -75,8 +81,8 @@ export interface GameState {
 
 
 // 8, 9, 10 are removed
-const RANKS: Rank[] = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3'];
-const SUITS: Suit[] = ['diamonds', 'spades', 'hearts', 'clubs'];
+export const RANKS: Rank[] = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3'];
+export const SUITS: Suit[] = ['diamonds', 'spades', 'hearts', 'clubs'];
 
 export const createDeck = (): Card[] => {
     const deck: Card[] = [];
@@ -127,6 +133,18 @@ export const setManilhas = (deck: Card[], manilhaRank: Rank): Card[] => {
         }
         return { ...card, isManilha: false, manilhaValue: 0 };
     });
+}
+
+export const buildCard = (rank: Rank, suit: Suit, manilhaRank: Rank | null): Card => {
+    const baseCard: Card = {
+        suit,
+        rank,
+        value: RANKS.indexOf(rank),
+        isManilha: false,
+        manilhaValue: 0
+    };
+
+    return manilhaRank ? setManilhas([baseCard], manilhaRank)[0]! : baseCard;
 }
 
 const SUIT_RANK: Record<string, number> = {
