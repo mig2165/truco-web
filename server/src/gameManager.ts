@@ -39,6 +39,10 @@ export class TrucoGameManager {
         this.devRoomsEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_ROOMS === 'true';
     }
 
+    public getGameState(roomId: string): GameState | undefined {
+        return this.rooms.get(roomId);
+    }
+
     public handleConnection(socket: Socket) {
         socket.on('createRoom', (payload: CreateRoomPayload, callback: (roomId: string) => void) => {
             this.createRoom(socket, payload, callback);
