@@ -65,7 +65,6 @@ export interface GameState {
     _maoActive?: boolean;
     _maoCallerId?: string;
     _maoType?: 'mao_baixa' | 'mao_real';
-    _trickLeaderIndex?: number;
 
     // Mão de Onze / Mão de Ferro
     maoDeOnzeActive?: boolean;

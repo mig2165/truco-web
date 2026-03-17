@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TrucoGameManager = void 0;
 const gameLogic_1 = require("./gameLogic");
+const bugReport_1 = require("./bugReport");
 const BOT_NAMES = ['Dev Bot East', 'Dev Bot North', 'Dev Bot West'];
 const DEFAULT_BOT_SPEED_MS = 600;
 const MAX_DEV_LOG_ENTRIES = 30;
@@ -17,6 +18,9 @@ class TrucoGameManager {
     constructor(io) {
         this.io = io;
         this.devRoomsEnabled = process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_ROOMS === 'true';
+    }
+    getGameState(roomId) {
+        return this.rooms.get(roomId);
     }
     handleConnection(socket) {
         socket.on('createRoom', (payload, callback) => {
@@ -113,6 +117,7 @@ class TrucoGameManager {
     addNotification(state, message, team) {
         // Notifications are ephemeral UI hints, but we mirror them into the dev log.
         state.notifications = [{ id: Math.random().toString(36).substring(2, 9), message, team }];
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, message);
         this.appendDevLog(state, message);
     }
     appendDevLog(state, message) {
@@ -246,6 +251,7 @@ class TrucoGameManager {
         this.startNewRound(state);
     }
     startNewRound(state) {
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, 'New round started.');
         this.clearRoomTasks(state.roomId);
         this.clearBotTimer(state.roomId);
         state.deck = (0, gameLogic_1.shuffleDeck)((0, gameLogic_1.createDeck)());
@@ -271,7 +277,6 @@ class TrucoGameManager {
         state._maoActive = false;
         state._maoType = undefined;
         state._maoCallerId = undefined;
-        state._trickLeaderIndex = undefined;
         state.maoDeOnzeActive = false;
         state.maoDeOnzeTeam = null;
         state.maoDeFerroActive = false;
@@ -344,6 +349,7 @@ class TrucoGameManager {
             }
             if (callType === 'mao_de_onze_play') {
                 state.maoDeOnzeActive = true;
+                state.roundPoints = 3;
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} accepted Mao de Onze.`, player.team);
                 state._phase = 'WAITING_FOR_HAND_PHASE';
                 this.emitState(state);
@@ -547,6 +553,7 @@ class TrucoGameManager {
         if (!card)
             return;
         state.table.push({ playerIndex, card: { ...card } });
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, `${player.name} played ${this.describeCard(card)}.`);
         this.appendDevLog(state, `${player.name} played ${this.describeCard(card)}.`);
         if (state.table.length < 4) {
             state.currentTurnIndex = (state.currentTurnIndex + 1) % 4;
@@ -592,6 +599,7 @@ class TrucoGameManager {
         }
         const winningEntry = state.table[winningEntryIndex];
         const winningPlayerIndex = winningEntry.playerIndex;
+        const trickStarterIndex = state.table[0].playerIndex;
         const winningTeam = state.players[winningPlayerIndex].team;
         const winningPlayerName = state.players[winningPlayerIndex].name;
         const allTied = state.table.every((entry) => (0, gameLogic_1.compareCards)(entry.card, state.table[0].card) === 0);
@@ -623,8 +631,7 @@ class TrucoGameManager {
                 state.notifications = [];
                 state.lastTrickWinner = -1;
                 state.lastTrickWinnerName = null;
-                state.currentTurnIndex = winnerTeamFinal ? winningPlayerIndex : state._trickLeaderIndex ?? state.startingPlayerIndex;
-                state._trickLeaderIndex = state.currentTurnIndex;
+                state.currentTurnIndex = winnerTeamFinal ? winningPlayerIndex : trickStarterIndex;
                 this.emitState(state);
             });
         }
@@ -670,6 +677,7 @@ class TrucoGameManager {
         });
     }
     endRound(state, winningTeam, nextStarterIndex) {
+        bugReport_1.bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}.`);
         if (state.maoDeFerroActive) {
             this.addNotification(state, `Team ${winningTeam} won Mao de Ferro and the game.`, winningTeam);
             state.maoDeFerroActive = false;

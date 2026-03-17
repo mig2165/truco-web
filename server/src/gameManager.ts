@@ -334,7 +334,6 @@ export class TrucoGameManager {
         state._maoActive = false;
         state._maoType = undefined;
         state._maoCallerId = undefined;
-        state._trickLeaderIndex = undefined;
         state.maoDeOnzeActive = false;
         state.maoDeOnzeTeam = null;
         state.maoDeFerroActive = false;
@@ -690,6 +689,7 @@ export class TrucoGameManager {
 
         const winningEntry = state.table[winningEntryIndex]!;
         const winningPlayerIndex = winningEntry.playerIndex;
+        const trickStarterIndex = state.table[0]!.playerIndex;
         const winningTeam = state.players[winningPlayerIndex]!.team;
         const winningPlayerName = state.players[winningPlayerIndex]!.name;
         const allTied = state.table.every((entry) => compareCards(entry.card, state.table[0]!.card) === 0);
@@ -724,8 +724,7 @@ export class TrucoGameManager {
                 state.notifications = [];
                 state.lastTrickWinner = -1 as never;
                 state.lastTrickWinnerName = null;
-                state.currentTurnIndex = winnerTeamFinal ? winningPlayerIndex : state._trickLeaderIndex ?? state.startingPlayerIndex;
-                state._trickLeaderIndex = state.currentTurnIndex;
+                state.currentTurnIndex = winnerTeamFinal ? winningPlayerIndex : trickStarterIndex;
                 this.emitState(state);
             });
         }

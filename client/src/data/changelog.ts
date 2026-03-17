@@ -27,7 +27,6 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Gamblers are now notified when a room is full.',
                     'Added rematch.',
                     'Updated chat to always be displayed.',
-                    '[Experimental] Gamblers can now view the current trick leading card and player. Please let Jin know if this is trash.',
                     'Added teacher mode.',
                     'Added dev mode.',
                 ],
@@ -37,6 +36,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                 items: [
                     'Fixed round skipping Mao de 11.',
                     'Fixed calling Truco on Mao de Ferro.',
+                    'Removed the trick lead panel because it could block the hand decision controls.',
                 ],
             },
         ],

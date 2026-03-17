@@ -491,6 +491,9 @@
     height: 280px;
     position: relative;
     z-index: 60;
+    /* The center panel is informational only, so it must not block the
+       start-of-hand controls rendered from the bottom player area. */
+    pointer-events: none;
 }
 
 .vira-container {
@@ -514,44 +517,6 @@
     color: rgba(255, 255, 255, 0.6);
     font-size: 0.7rem;
     margin-top: 2px;
-}
-
-/* ── Current Leader Card ─────────────────────────────── */
-.leader-card-area {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    min-height: 180px;
-    min-width: 170px;
-    padding: 0.9rem 1rem;
-    border-radius: 18px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.leader-title {
-    color: #fbbf24;
-    font-weight: 800;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.leader-player-label,
-.leader-empty-state {
-    max-width: 190px;
-    text-align: center;
-    font-size: 0.82rem;
-    font-weight: 700;
-}
-
-.leader-empty-state {
-    color: rgba(255, 255, 255, 0.72);
-    line-height: 1.4;
 }
 
 .played-by-label {
