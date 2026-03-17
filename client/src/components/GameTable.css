@@ -572,6 +572,10 @@
     flex-direction: column;
     gap: 0.85rem;
     align-items: center;
+    /* The table center is non-interactive by default, so the rematch panel
+       must opt back into pointer events. */
+    pointer-events: auto;
+    z-index: 80;
 }
 
 .game-end-title {
@@ -586,6 +590,10 @@
 
 .rematch-button {
     min-width: 180px;
+}
+
+.game-end * {
+    pointer-events: auto;
 }
 
 /* ── Action Buttons ──────────────────────────────────── */

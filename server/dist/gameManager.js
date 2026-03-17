@@ -228,7 +228,7 @@ class TrucoGameManager {
         const state = this.rooms.get(roomId);
         if (!state || state.status !== 'game_end')
             return;
-        if (state.hostPlayerId !== socket.id)
+        if (!state.players.some((player) => player.id === socket.id))
             return;
         if (state.players.length !== 4)
             return;
@@ -297,9 +297,6 @@ class TrucoGameManager {
             state._phase = 'TRICK_PHASE';
             this.addNotification(state, 'Mao de Ferro active. All cards are hidden and the winner takes the game.', 0);
             this.emitState(state);
-            if (!state.dev?.enabled) {
-                this.autoPlayMaoDeFerro(state);
-            }
             return;
         }
         const team1Has11 = state.points.team1 >= ENDGAME_ENTRY_SCORE;
@@ -337,6 +334,7 @@ class TrucoGameManager {
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} ran from Mao de Onze.`, player.team);
                 state.maoDeOnzeTeam = null;
                 this.awardPoints(state, opponentTeam, 1);
+                state.winnerTeam = opponentTeam;
                 state.status = 'round_end';
                 state._phase = 'ROUND_END';
                 this.emitState(state);
@@ -373,15 +371,18 @@ class TrucoGameManager {
                     this.scheduleRoomTask(state.roomId, 3000, () => {
                         const isTruth = this.evaluateMaoTruth(caller, state._maoType);
                         const winningTeam = isTruth ? caller.team : player.team;
+                        const allowGameWin = state.maoDeOnzeActive || state.maoDeFerroActive;
                         if (isTruth) {
                             this.addNotification(state, `The call was true. Team ${caller.team} gains 1 point.`, caller.team);
-                            this.awardPoints(state, caller.team, 1);
+                            this.awardPoints(state, caller.team, 1, { allowGameWin });
                         }
                         else {
                             this.addNotification(state, `The call was false. Team ${player.team} gains 1 point.`, player.team);
-                            this.awardPoints(state, player.team, 1);
+                            this.awardPoints(state, player.team, 1, { allowGameWin });
                         }
-                        if (state.points.team1 >= ENDGAME_ENTRY_SCORE || state.points.team2 >= ENDGAME_ENTRY_SCORE) {
+                        // Mid-hand Mao scoring should only restart the round when it creates a
+                        // new endgame state. Otherwise, keep the same round and only redeal the caller.
+                        if (this.shouldEndRoundAfterSpecialCall(state)) {
                             caller.exposedHand = false;
                             this.finishScoredRoundFromSpecialCall(state, winningTeam);
                             return;
@@ -546,10 +547,8 @@ class TrucoGameManager {
             return;
         if (cardIndex < 0 || cardIndex >= player.hand.length)
             return;
-        const indexToPlay = state.maoDeFerroActive
-            ? Math.floor(this.nextRandom(state) * player.hand.length)
-            : cardIndex;
-        const card = player.hand.splice(indexToPlay, 1)[0];
+        // Mao de Ferro still hides every hand, but the acting player should choose the card they commit.
+        const card = player.hand.splice(cardIndex, 1)[0];
         if (!card)
             return;
         state.table.push({ playerIndex, card: { ...card } });
@@ -562,31 +561,6 @@ class TrucoGameManager {
         else {
             this.evaluateTrick(state);
         }
-    }
-    autoPlayMaoDeFerro(state) {
-        const tick = () => {
-            if (!state.maoDeFerroActive)
-                return;
-            if (state.status !== 'playing' || state._phase !== 'TRICK_PHASE')
-                return;
-            if (state.callState.awaitingResponseFromTeam !== null) {
-                this.scheduleRoomTask(state.roomId, 600, tick);
-                return;
-            }
-            if (state.table.length >= 4) {
-                this.scheduleRoomTask(state.roomId, 600, tick);
-                return;
-            }
-            const playerIndex = state.currentTurnIndex;
-            const player = state.players[playerIndex];
-            if (!player || player.hand.length === 0) {
-                this.scheduleRoomTask(state.roomId, 600, tick);
-                return;
-            }
-            this.playCardByIndex(state, playerIndex, 0);
-            this.scheduleRoomTask(state.roomId, 600, tick);
-        };
-        this.scheduleRoomTask(state.roomId, 600, tick);
     }
     evaluateTrick(state) {
         let winningEntryIndex = 0;
@@ -652,11 +626,22 @@ class TrucoGameManager {
             state.points.team2 = Math.min(state.points.team2 + amount, scoreCap);
         }
     }
+    shouldEndRoundAfterSpecialCall(state) {
+        const reachedGameWin = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
+        const reachedMaoDeFerro = state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE;
+        const reachedEndgameEntry = state.points.team1 >= ENDGAME_ENTRY_SCORE || state.points.team2 >= ENDGAME_ENTRY_SCORE;
+        const inEndgameHand = state.maoDeOnzeActive || state.maoDeFerroActive;
+        if (reachedGameWin || reachedMaoDeFerro) {
+            return true;
+        }
+        return !inEndgameHand && reachedEndgameEntry;
+    }
     finishScoredRoundFromSpecialCall(state, winningTeam) {
         // A point awarded mid-hand can push the match into Mao de Onze/Ferro.
         // Restart through startNewRound() so every 11-point score uses the same flow.
         state.status = 'round_end';
         state._phase = 'ROUND_END';
+        state.winnerTeam = winningTeam;
         state._maoActive = false;
         state._maoType = undefined;
         state._maoCallerId = undefined;
@@ -678,6 +663,7 @@ class TrucoGameManager {
     }
     endRound(state, winningTeam, nextStarterIndex) {
         bugReport_1.bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}.`);
+        state.winnerTeam = winningTeam;
         if (state.maoDeFerroActive) {
             this.addNotification(state, `Team ${winningTeam} won Mao de Ferro and the game.`, winningTeam);
             state.maoDeFerroActive = false;

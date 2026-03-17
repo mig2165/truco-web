@@ -51,7 +51,6 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const leftPlayer = getRelativePlayer(3);
 
     const isMyTurn = gameState.players[gameState.currentTurnIndex]?.id === currentPlayerId;
-    const isHost = Boolean(currentPlayerId && gameState.hostPlayerId === currentPlayerId);
     const tricksPlayed = gameState.tricks.team1 + gameState.tricks.team2;
     const endgameHandActive = gameState.maoDeOnzeActive || gameState.maoDeFerroActive;
     const canCallTruco = !endgameHandActive && tricksPlayed >= 1 && gameState.roundPoints === 1 && gameState.callState.lastCallTeam !== me?.team;
@@ -61,6 +60,8 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const winningTeamLabel = (gameState.winnerTeam === 1 || (gameState.winnerTeam == null && gameState.points.team1 > gameState.points.team2))
         ? '🔵 Team 1 wins the GAME!'
         : '🔴 Team 2 wins the GAME!';
+    const roundWinnerTeam = gameState.winnerTeam
+        ?? (gameState.tricks.team1 > gameState.tricks.team2 ? 1 : gameState.tricks.team2 > gameState.tricks.team1 ? 2 : null);
 
     const getSuitSymbol = (suit: string) => {
         switch (suit) {
@@ -250,24 +251,20 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
                     {gameState.status === 'round_end' && (
                         <div className="round-result">
-                            {gameState.tricks.team1 > gameState.tricks.team2
+                            {roundWinnerTeam === 1
                                 ? '🔵 Team 1 wins the round!'
-                                : '🔴 Team 2 wins the round!'}
+                                : roundWinnerTeam === 2
+                                    ? '🔴 Team 2 wins the round!'
+                                    : 'Round ended.'}
                         </div>
                     )}
                     {gameState.status === 'game_end' && (
                         <div className="round-result game-end">
                             <div className="game-end-title">{winningTeamLabel}</div>
-                            {isHost ? (
-                                <>
-                                    <div className="game-end-subtitle">Start a rematch with the same teams.</div>
-                                    <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
-                                        Start Rematch
-                                    </button>
-                                </>
-                            ) : (
-                                <div className="game-end-subtitle">Waiting for host to start rematch.</div>
-                            )}
+                            <div className="game-end-subtitle">Anyone can start a rematch with the same teams.</div>
+                            <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
+                                Start Rematch
+                            </button>
                         </div>
                     )}
                 </div>
