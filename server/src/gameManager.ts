@@ -10,6 +10,7 @@ import {
     setManilhas,
     compareCards
 } from './gameLogic';
+import { bugReportManager } from './bugReport';
 
 type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string };
 type ScheduledTask = ReturnType<typeof setTimeout>;
@@ -143,6 +144,7 @@ export class TrucoGameManager {
     private addNotification(state: GameState, message: string, team: number) {
         // Notifications are ephemeral UI hints, but we mirror them into the dev log.
         state.notifications = [{ id: Math.random().toString(36).substring(2, 9), message, team }];
+        bugReportManager.logGameEvent(state.roomId, message);
         this.appendDevLog(state, message);
     }
 
@@ -298,6 +300,7 @@ export class TrucoGameManager {
     }
 
     private startNewRound(state: GameState) {
+        bugReportManager.logGameEvent(state.roomId, 'New round started.');
         this.clearRoomTasks(state.roomId);
         this.clearBotTimer(state.roomId);
 
@@ -410,6 +413,7 @@ export class TrucoGameManager {
 
             if (callType === 'mao_de_onze_play') {
                 state.maoDeOnzeActive = true;
+                state.roundPoints = 3;
                 this.addNotification(state, `Team ${state.maoDeOnzeTeam} accepted Mao de Onze.`, player.team);
                 state._phase = 'WAITING_FOR_HAND_PHASE';
                 this.emitState(state);
@@ -632,6 +636,7 @@ export class TrucoGameManager {
         if (!card) return;
 
         state.table.push({ playerIndex, card: { ...card } });
+        bugReportManager.logGameEvent(state.roomId, `${player.name} played ${this.describeCard(card)}.`);
         this.appendDevLog(state, `${player.name} played ${this.describeCard(card)}.`);
 
         if (state.table.length < 4) {
@@ -769,6 +774,7 @@ export class TrucoGameManager {
     }
 
     private endRound(state: GameState, winningTeam: number, nextStarterIndex?: number) {
+        bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}.`);
         if (state.maoDeFerroActive) {
             this.addNotification(state, `Team ${winningTeam} won Mao de Ferro and the game.`, winningTeam);
             state.maoDeFerroActive = false;
