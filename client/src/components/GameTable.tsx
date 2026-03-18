@@ -22,6 +22,8 @@ type DebugCommand =
     | { type: 'setScore'; score: { team1: number; team2: number } }
     | { type: 'setPlayerHand'; playerId: string; cards: DebugHandCard[] };
 
+const PEW_PEW_DURATION_MS = 6000;
+
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
@@ -72,7 +74,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
         const stopEffectTimer = window.setTimeout(() => {
             setPewPewActive(false);
-        }, 1700);
+        }, PEW_PEW_DURATION_MS);
 
         return () => {
             window.clearTimeout(stopEffectTimer);
@@ -326,20 +328,6 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
     return (
         <div className="game-table-wrapper">
-            {pewPewActive && (
-                <div key={pewPewBurstId} className="pew-pew-overlay" aria-hidden="true">
-                    <div className="pew-pew-dim"></div>
-                    <div className="pew-pew-flash"></div>
-                    <div className="pew-pew-caption">CLUBS MANILHA</div>
-                    <span className="laser-beam laser-beam-1"></span>
-                    <span className="laser-beam laser-beam-2"></span>
-                    <span className="laser-beam laser-beam-3"></span>
-                    <span className="laser-beam laser-beam-4"></span>
-                    <span className="laser-beam laser-beam-5"></span>
-                    <span className="laser-beam laser-beam-6"></span>
-                </div>
-            )}
-
             {/* Player Menu */}
             <button className={`menu-trigger glass-panel ${secretDebugActive ? 'debug-active' : ''}`} onClick={() => setMenuOpen(true)}>
                 <User size={16} /> {playerName || me?.name || 'Me'}
@@ -492,6 +480,28 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             )}
 
             <div className="table-felt">
+                {pewPewActive && (
+                    <div
+                        key={pewPewBurstId}
+                        className="pew-pew-overlay"
+                        aria-hidden="true"
+                    >
+                        <div className="pew-pew-dim"></div>
+                        <div className="pew-pew-flash"></div>
+                        <div className="pew-pew-shockwave pew-pew-shockwave-1"></div>
+                        <div className="pew-pew-shockwave pew-pew-shockwave-2"></div>
+                        <div className="pew-pew-shockwave pew-pew-shockwave-3"></div>
+                        <div className="pew-pew-caption">ZAP</div>
+                        <span className="laser-beam laser-beam-1"></span>
+                        <span className="laser-beam laser-beam-2"></span>
+                        <span className="laser-beam laser-beam-3"></span>
+                        <span className="laser-beam laser-beam-4"></span>
+                        <span className="laser-beam laser-beam-5"></span>
+                        <span className="laser-beam laser-beam-6"></span>
+                        <span className="laser-beam laser-beam-7"></span>
+                        <span className="laser-beam laser-beam-8"></span>
+                    </div>
+                )}
 
                 {/* Trick result banner (fades away) */}
                 {showTrickWinnerOverlay && (

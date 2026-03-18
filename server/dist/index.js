@@ -124,6 +124,8 @@ app.get('/room/:id', (req, res) => {
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
     gameManager.handleConnection(socket);
+    // Keep the shared lobby presence counter in sync for all connected clients.
+    gameManager.broadcastLobbySnapshot();
     // Chat — broadcast to all players in the room
     socket.on('chatMessage', (roomId, msg) => {
         io.to(roomId).emit('chatMessage', { ...msg, timestamp: Date.now() });

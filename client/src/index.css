@@ -41,6 +41,17 @@ body {
   width: 100vw;
 }
 
+html.lobby-scroll-enabled,
+body.lobby-scroll-enabled {
+  overflow-y: auto;
+}
+
+body.lobby-scroll-enabled #root,
+#root.lobby-scroll-enabled {
+  height: auto;
+  min-height: 100vh;
+}
+
 .glass-panel {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);

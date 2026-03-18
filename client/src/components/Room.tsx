@@ -130,6 +130,13 @@ export const Room: React.FC = () => {
     }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
 
     const handleLeave = () => {
+        if (socket && roomId && hasJoined.current) {
+            // Tell the server to free our seat immediately instead of waiting for a disconnect.
+            socket.emit('leaveRoom', roomId);
+            hasJoined.current = false;
+            setJoinedRoom(false);
+            setJoinInFlight(false);
+        }
         navigate('/');
     };
 
