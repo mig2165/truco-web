@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { LogOut, User, X, AlertTriangle } from 'lucide-react';
 import './GameTable.css';
@@ -12,13 +12,114 @@ interface GameTableProps {
     onLeave?: () => void;
 }
 
+const CARD_RANKS = ['4', '5', '6', '7', 'Q', 'J', 'K', 'A', '2', '3'] as const;
+const CARD_SUITS = ['diamonds', 'spades', 'hearts', 'clubs'] as const;
+
+type DebugRank = typeof CARD_RANKS[number];
+type DebugSuit = typeof CARD_SUITS[number];
+type DebugHandCard = { rank: DebugRank; suit: DebugSuit };
+type DebugCommand =
+    | { type: 'setScore'; score: { team1: number; team2: number } }
+    | { type: 'setPlayerHand'; playerId: string; cards: DebugHandCard[] };
+
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
+    const [pewPewActive, setPewPewActive] = useState(false);
+    const [pewPewBurstId, setPewPewBurstId] = useState(0);
+    const [secretCode, setSecretCode] = useState('');
+    const [debugScore, setDebugScore] = useState({ team1: '0', team2: '0' });
+    const [debugHandDrafts, setDebugHandDrafts] = useState<Record<string, DebugHandCard[]>>({});
+    const lastTableSignatureRef = useRef<string>('');
+    const lastRoomRef = useRef<string>('');
+
+    const isClubsManilha = (card: any) => card?.isManilha && card?.suit === 'clubs';
+
+    useEffect(() => {
+        if (!gameState) {
+            lastTableSignatureRef.current = '';
+            lastRoomRef.current = '';
+            setPewPewActive(false);
+            return;
+        }
+
+        const currentSignature = gameState.table
+            .map((entry: any) => `${entry.playerIndex}:${entry.card?.rank}:${entry.card?.suit}:${entry.card?.isManilha ? 'm' : 'n'}`)
+            .join('|');
+
+        // Reset detection on room switches so reconnecting or spectating another room does not replay stale bursts.
+        if (lastRoomRef.current !== gameState.roomId) {
+            lastRoomRef.current = gameState.roomId;
+            lastTableSignatureRef.current = currentSignature;
+            setPewPewActive(false);
+            return;
+        }
+
+        const previousEntries = lastTableSignatureRef.current ? lastTableSignatureRef.current.split('|').filter(Boolean) : [];
+        const currentEntries = currentSignature ? currentSignature.split('|').filter(Boolean) : [];
+        const newlyPlayedEntry = currentEntries.length > previousEntries.length
+            ? gameState.table[currentEntries.length - 1]
+            : null;
+
+        lastTableSignatureRef.current = currentSignature;
+
+        if (!newlyPlayedEntry || !isClubsManilha(newlyPlayedEntry.card)) {
+            return;
+        }
+
+        setPewPewBurstId((previousBurstId) => previousBurstId + 1);
+        setPewPewActive(true);
+
+        const stopEffectTimer = window.setTimeout(() => {
+            setPewPewActive(false);
+        }, 1700);
+
+        return () => {
+            window.clearTimeout(stopEffectTimer);
+        };
+    }, [gameState]);
+
+    useEffect(() => {
+        if (!gameState) return;
+
+        setDebugScore({
+            team1: String(gameState.points.team1),
+            team2: String(gameState.points.team2)
+        });
+    }, [gameState?.points.team1, gameState?.points.team2]);
+
+    useEffect(() => {
+        if (!gameState?.secretDebug?.active) {
+            setDebugHandDrafts({});
+            return;
+        }
+
+        // Keep the editor aligned with the latest server state after any debug
+        // mutation or regular round transition.
+        const nextDrafts = Object.fromEntries(
+            gameState.players.map((player: any) => [
+                player.id,
+                player.hand.map((card: any) => ({
+                    rank: card.rank as DebugRank,
+                    suit: card.suit as DebugSuit
+                }))
+            ])
+        ) as Record<string, DebugHandCard[]>;
+
+        setDebugHandDrafts(nextDrafts);
+        setSecretCode('');
+    }, [gameState?.players, gameState?.secretDebug?.active]);
 
     if (!gameState) return null;
 
+    const secretDebugAvailable = Boolean(gameState.secretDebug?.available);
+    const secretDebugActive = Boolean(gameState.secretDebug?.active);
     const allPlayersReady = gameState.players.every((p: any) => p.maoBaixaReady);
+
+    const sendDebugCommand = (command: DebugCommand) => {
+        if (!socket) return;
+        socket.emit('debugCommand', gameState.roomId, command);
+    };
 
     const handlePlayCard = (index: number) => {
         const awaitingMyTeam = gameState.callState?.awaitingResponseFromTeam === me?.team;
@@ -37,6 +138,59 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         if (socket) {
             socket.emit('startRematch', gameState.roomId);
         }
+    };
+
+    const handleActivateSecretDebug = () => {
+        const trimmedCode = secretCode.trim();
+        if (!socket || !trimmedCode) return;
+
+        socket.emit('activateSecretDebug', gameState.roomId, trimmedCode);
+    };
+
+    const applyDebugScore = () => {
+        const team1 = Number.parseInt(debugScore.team1, 10);
+        const team2 = Number.parseInt(debugScore.team2, 10);
+        if (Number.isNaN(team1) || Number.isNaN(team2)) return;
+
+        sendDebugCommand({
+            type: 'setScore',
+            score: {
+                team1: Math.max(0, Math.min(11, team1)),
+                team2: Math.max(0, Math.min(11, team2))
+            }
+        });
+    };
+
+    const updateDebugCard = (playerId: string, cardIndex: number, field: 'rank' | 'suit', value: string) => {
+        setDebugHandDrafts((currentDrafts) => {
+            const playerDraft = currentDrafts[playerId];
+            if (!playerDraft) return currentDrafts;
+
+            const nextDraft = playerDraft.map((card, index) =>
+                index === cardIndex
+                    ? {
+                        ...card,
+                        [field]: value
+                    }
+                    : card
+            );
+
+            return {
+                ...currentDrafts,
+                [playerId]: nextDraft as DebugHandCard[]
+            };
+        });
+    };
+
+    const applyDebugHand = (playerId: string) => {
+        const cards = debugHandDrafts[playerId];
+        if (!cards) return;
+
+        sendDebugCommand({
+            type: 'setPlayerHand',
+            playerId,
+            cards
+        });
     };
 
     const getRelativePlayer = (offset: number) => {
@@ -144,7 +298,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {/* Cards in hand */}
                 {position !== 'bottom' && (
                     <div className={`player-hand ${vertical ? 'vertical' : ''}`}>
-                        {player.exposedHand || (gameState.maoDeOnzeTeam === me?.team && player.team === me?.team)
+                        {secretDebugActive || player.exposedHand || (gameState.maoDeOnzeTeam === me?.team && player.team === me?.team)
                             ? player.hand.map((card: any, i: number) => renderCard(card, i, false))
                             : player.hand.map((_: any, i: number) => renderCard(null, i, true))
                         }
@@ -172,10 +326,24 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
     return (
         <div className="game-table-wrapper">
+            {pewPewActive && (
+                <div key={pewPewBurstId} className="pew-pew-overlay" aria-hidden="true">
+                    <div className="pew-pew-dim"></div>
+                    <div className="pew-pew-flash"></div>
+                    <div className="pew-pew-caption">CLUBS MANILHA</div>
+                    <span className="laser-beam laser-beam-1"></span>
+                    <span className="laser-beam laser-beam-2"></span>
+                    <span className="laser-beam laser-beam-3"></span>
+                    <span className="laser-beam laser-beam-4"></span>
+                    <span className="laser-beam laser-beam-5"></span>
+                    <span className="laser-beam laser-beam-6"></span>
+                </div>
+            )}
 
             {/* Player Menu */}
-            <button className="menu-trigger glass-panel" onClick={() => setMenuOpen(true)}>
+            <button className={`menu-trigger glass-panel ${secretDebugActive ? 'debug-active' : ''}`} onClick={() => setMenuOpen(true)}>
                 <User size={16} /> {playerName || me?.name || 'Me'}
+                {secretDebugActive && <span className="menu-debug-pill">Debug</span>}
             </button>
 
             {/* Report Issue Button */}
@@ -201,6 +369,107 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             <span>vs</span>
                             <span>Team 2: <strong>{gameState.points.team2}</strong></span>
                         </div>
+                        {secretDebugAvailable && !secretDebugActive && (
+                            <section className="secret-debug-section">
+                                <div className="secret-debug-title">Secret Debug Code</div>
+                                <div className="secret-debug-inline">
+                                    <input
+                                        className="secret-debug-input"
+                                        type="password"
+                                        value={secretCode}
+                                        onChange={(event) => setSecretCode(event.target.value)}
+                                        placeholder="Enter code"
+                                    />
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={handleActivateSecretDebug}
+                                        disabled={!secretCode.trim()}
+                                    >
+                                        Unlock
+                                    </button>
+                                </div>
+                                <div className="secret-debug-note">
+                                    This is only available on non-production servers.
+                                </div>
+                            </section>
+                        )}
+                        {secretDebugActive && (
+                            <section className="secret-debug-section">
+                                <div className="secret-debug-title">Debug Mode Active</div>
+                                <div className="secret-debug-score-editor">
+                                    <label>
+                                        Team 1
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={11}
+                                            value={debugScore.team1}
+                                            onChange={(event) => setDebugScore((current) => ({ ...current, team1: event.target.value }))}
+                                        />
+                                    </label>
+                                    <label>
+                                        Team 2
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={11}
+                                            value={debugScore.team2}
+                                            onChange={(event) => setDebugScore((current) => ({ ...current, team2: event.target.value }))}
+                                        />
+                                    </label>
+                                    <button className="btn btn-primary" onClick={applyDebugScore}>
+                                        Reset Round With Score
+                                    </button>
+                                </div>
+                                <div className="secret-debug-player-list">
+                                    {gameState.players.map((player: any) => {
+                                        const playerDraft = debugHandDrafts[player.id] ?? [];
+
+                                        return (
+                                            <div key={player.id} className="secret-debug-player-card">
+                                                <div className="secret-debug-player-header">
+                                                    <strong>{player.name}</strong>
+                                                    <span className={`team-${player.team}`}>Team {player.team}</span>
+                                                </div>
+                                                {playerDraft.length === 0 ? (
+                                                    <div className="secret-debug-empty">No cards left in hand.</div>
+                                                ) : (
+                                                    <div className="secret-debug-card-grid">
+                                                        {playerDraft.map((card, cardIndex) => (
+                                                            <div key={`${player.id}-${cardIndex}`} className="secret-debug-card-row">
+                                                                <select
+                                                                    value={card.rank}
+                                                                    onChange={(event) => updateDebugCard(player.id, cardIndex, 'rank', event.target.value)}
+                                                                >
+                                                                    {CARD_RANKS.map((rank) => (
+                                                                        <option key={rank} value={rank}>{rank}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <select
+                                                                    value={card.suit}
+                                                                    onChange={(event) => updateDebugCard(player.id, cardIndex, 'suit', event.target.value)}
+                                                                >
+                                                                    {CARD_SUITS.map((suit) => (
+                                                                        <option key={suit} value={suit}>{suit}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <button
+                                                    className="btn btn-secondary"
+                                                    onClick={() => applyDebugHand(player.id)}
+                                                    disabled={playerDraft.length === 0}
+                                                >
+                                                    Apply Hand
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        )}
                         <button className="btn btn-danger leave-btn" onClick={onLeave}>
                             <LogOut size={16} /> Leave Table
                         </button>
