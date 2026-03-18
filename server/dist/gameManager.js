@@ -271,6 +271,7 @@ class TrucoGameManager {
             seatedPlayers: state.players.length,
             openSeats: Math.max(0, 4 - state.players.length),
             players: state.players.map((player) => ({
+                id: player.id,
                 name: player.name,
                 // Public lobby data only needs the fixed two-team seating model.
                 team: player.team,

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { SocketProvider } from './context/SocketContext';
 import { Lobby } from './components/Lobby';
 import { Room } from './components/Room';
 import { StorePage } from './components/StorePage';
 import { WalletPage } from './components/WalletPage';
 import teacherModeDoc from './assets/teacher-mode-doc.svg';
+import { COSMETICS_ENABLED } from './lib/features';
 import './App.css';
 
 function App() {
@@ -18,8 +19,9 @@ function App() {
           <Routes>
             <Route path="/" element={<Lobby />} />
             <Route path="/room/:roomId" element={<Room />} />
-            <Route path="/store" element={<StorePage />} />
-            <Route path="/wallet" element={<WalletPage />} />
+            {COSMETICS_ENABLED && <Route path="/store" element={<StorePage />} />}
+            {COSMETICS_ENABLED && <Route path="/wallet" element={<WalletPage />} />}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Router>
 

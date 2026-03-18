@@ -9,18 +9,17 @@ import {
     Eye,
     Radio,
     ChevronDown,
-    ChevronUp,
-    Store,
-    Wallet
+    ChevronUp
 } from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
 import { AvatarWithHat } from './AvatarWithHat';
-import { fetchEconomyProfile, syncEconomyProfile } from '../lib/economyApi';
-import { formatTk, type EconomyProfile, type PlayerHat } from '../lib/economy';
+import { type PlayerHat } from '../lib/economy';
+import { COSMETICS_ENABLED } from '../lib/features';
 import { getStoredIdentity, updateStoredIdentity } from '../lib/profileStorage';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
+    id: string;
     name: string;
     team: 1 | 2;
     isBot: boolean;
@@ -45,13 +44,11 @@ type LobbySnapshot = {
 export const Lobby: React.FC = () => {
     const { socket, isConnected } = useSocket();
     const navigate = useNavigate();
-    const [identity, setIdentity] = useState(() => getStoredIdentity());
     const [playerName, setPlayerName] = useState(() => getStoredIdentity().playerName);
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
     const [devSeed, setDevSeed] = useState('');
     const [error, setError] = useState('');
     const [showActiveRooms, setShowActiveRooms] = useState(false);
-    const [economyProfile, setEconomyProfile] = useState<EconomyProfile | null>(null);
     const [lobbySnapshot, setLobbySnapshot] = useState<LobbySnapshot>({
         onlinePlayers: 0,
         activeRooms: []
@@ -63,42 +60,13 @@ export const Lobby: React.FC = () => {
     const devRoomsAvailable = isDevQueryEnabled && (import.meta.env.DEV || isLocalHost || import.meta.env.VITE_ENABLE_DEV_ROOMS === 'true');
 
     useEffect(() => {
-        let cancelled = false;
+        if (COSMETICS_ENABLED) {
+            return;
+        }
 
-        const loadEconomyProfile = async () => {
-            try {
-                const response = await fetchEconomyProfile(identity.profileId, playerName || identity.playerName);
-                if (!cancelled) {
-                    setEconomyProfile(response.profile);
-                }
-            } catch {
-                if (!cancelled) {
-                    setEconomyProfile(null);
-                }
-            }
-        };
-
-        void loadEconomyProfile();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [identity.playerName, identity.profileId, playerName]);
-
-    useEffect(() => {
-        const syncTimer = window.setTimeout(async () => {
-            try {
-                const nextIdentity = updateStoredIdentity({ playerName });
-                setIdentity(nextIdentity);
-                const response = await syncEconomyProfile({
-                    profileId: nextIdentity.profileId,
-                    displayName: playerName || undefined,
-                    receiptEmail: nextIdentity.receiptEmail || undefined
-                });
-                setEconomyProfile(response.profile);
-            } catch {
-                // Lobby input should stay responsive even if profile sync fails.
-            }
+        // Keep profile identity updates so room joins remain stable even with cosmetics off.
+        const syncTimer = window.setTimeout(() => {
+            updateStoredIdentity({ playerName });
         }, 250);
 
         return () => {
@@ -132,7 +100,6 @@ export const Lobby: React.FC = () => {
     const persistIdentityForMatch = () => {
         const trimmedName = playerName.trim();
         const nextIdentity = updateStoredIdentity({ playerName: trimmedName });
-        setIdentity(nextIdentity);
         return {
             ...nextIdentity,
             playerName: trimmedName
@@ -207,49 +174,12 @@ export const Lobby: React.FC = () => {
                             <Users size={14} />
                             <span>{lobbySnapshot.activeRooms.length} active rooms</span>
                         </div>
-                        {economyProfile && (
-                            <div className="lobby-stat-pill">
-                                <Wallet size={14} />
-                                <span>{formatTk(economyProfile.balanceTk)}</span>
-                            </div>
-                        )}
                     </div>
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
                 </div>
 
                 <div className="lobby-forms">
                     {error && <div className="error-message">{error}</div>}
-
-                    {economyProfile && (
-                        <div className="economy-preview-card">
-                            <div className="economy-preview-card__identity">
-                                <AvatarWithHat
-                                    initial={(economyProfile.displayName || playerName || 'P')[0] ?? 'P'}
-                                    hat={economyProfile.equippedHat}
-                                    size="lg"
-                                    circleClassName="economy-preview-card__avatar"
-                                />
-                                <div>
-                                    <div className="economy-preview-card__name">{economyProfile.displayName}</div>
-                                    <div className="economy-preview-card__hat">Current hat: {economyProfile.equippedHat.name}</div>
-                                </div>
-                            </div>
-                            <div className="economy-preview-card__wallet">
-                                <div>
-                                    <span className="economy-preview-card__label">Wallet</span>
-                                    <strong>{formatTk(economyProfile.balanceTk)}</strong>
-                                </div>
-                                <div className="economy-preview-card__actions">
-                                    <button className="btn btn-secondary" onClick={() => navigate('/store')}>
-                                        <Store size={18} /> Store
-                                    </button>
-                                    <button className="btn btn-primary" onClick={() => navigate('/wallet')}>
-                                        <Wallet size={18} /> Buy Tokens
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     <div className="input-group">
                         <label>Your Name</label>
@@ -336,7 +266,7 @@ export const Lobby: React.FC = () => {
                                                         <div className="room-team-column">
                                                             <p className="room-team-label">Team 1</p>
                                                             {room.players.filter((player) => player.team === 1).map((player) => (
-                                                                <span key={`${room.roomId}-${player.team}-${player.name}`} className="room-player-chip">
+                                                                <span key={`${room.roomId}-${player.id}`} className="room-player-chip">
                                                                     <AvatarWithHat
                                                                         initial={player.name[0] ?? '?'}
                                                                         hat={player.hat}
@@ -353,7 +283,7 @@ export const Lobby: React.FC = () => {
                                                         <div className="room-team-column">
                                                             <p className="room-team-label">Team 2</p>
                                                             {room.players.filter((player) => player.team === 2).map((player) => (
-                                                                <span key={`${room.roomId}-${player.team}-${player.name}`} className="room-player-chip">
+                                                                <span key={`${room.roomId}-${player.id}`} className="room-player-chip">
                                                                     <AvatarWithHat
                                                                         initial={player.name[0] ?? '?'}
                                                                         hat={player.hat}

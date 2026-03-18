@@ -41,7 +41,6 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
-    const hasLeftRoom = useRef(false);
 
     const [rulesOpen, setRulesOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -84,7 +83,6 @@ export const Room: React.FC = () => {
             // Once the server echoes us back in the roster, we know the join actually stuck.
             if (state.players.some((player: any) => player.id === socket.id)) {
                 hasJoined.current = true;
-                hasLeftRoom.current = false;
                 setJoinedRoom(true);
                 setJoinInFlight(false);
             }
@@ -150,27 +148,15 @@ export const Room: React.FC = () => {
     }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate, identity.profileId]);
 
     const leaveRoomIfJoined = () => {
-        if (!socket || !roomId || !hasJoined.current || hasLeftRoom.current) return;
+        if (!socket || !roomId || !hasJoined.current) return;
 
-        // Keep leave semantics tied to the room screen itself. If this component
-        // goes away, the seat should be released even though the app socket lives on.
+        // Only the explicit leave action should release the seat while the tab stays open.
+        // Closing the tab still removes the player through the server-side disconnect path.
         socket.emit('leaveRoom', roomId);
-        hasLeftRoom.current = true;
         hasJoined.current = false;
         setJoinedRoom(false);
         setJoinInFlight(false);
     };
-
-    useEffect(() => {
-        return () => {
-            if (!socket || !roomId || !hasJoined.current || hasLeftRoom.current) return;
-
-            // Route changes keep the socket alive, so the unmount itself must release the seat.
-            socket.emit('leaveRoom', roomId);
-            hasLeftRoom.current = true;
-            hasJoined.current = false;
-        };
-    }, [socket, roomId]);
 
     const handleLeave = () => {
         leaveRoomIfJoined();
