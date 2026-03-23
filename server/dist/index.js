@@ -10,6 +10,9 @@ const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
 const gameManager_1 = require("./gameManager");
 const bugReport_1 = require("./bugReport");
+const database_1 = require("./database");
+const bugFixer_1 = require("./bugFixer");
+const gitIntegration_1 = require("./gitIntegration");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
 // Logging middleware
@@ -120,6 +123,134 @@ app.get('/admin', (_req, res) => {
 app.get('/room/:id', (req, res) => {
     res.sendFile(path_1.default.join(clientBuildPath, 'index.html'));
 });
+// ── Bugfix Pipeline API Endpoints ─────────────────────────────────────────────
+app.get('/api/bugfix-dashboard', (_req, res) => {
+    const reports = bugReport_1.bugReportManager.getReports();
+    const fixes = database_1.fixDb.getAll();
+    const prs = database_1.prDb.getAll();
+    res.json({
+        reports: reports.map(r => ({
+            id: r.id,
+            category: r.category,
+            status: r.status,
+            description: r.description,
+            playerName: r.playerName,
+            timestamp: r.timestamp,
+            fixId: r.fixId,
+            prId: r.prId,
+            prUrl: r.prUrl,
+            violations: r.investigationResult?.ruleViolations.length ?? 0,
+        })),
+        fixes,
+        prs,
+        stats: buildBugfixStats(reports, fixes, prs),
+    });
+});
+app.get('/api/bugfix/stats', (_req, res) => {
+    const reports = bugReport_1.bugReportManager.getReports();
+    const fixes = database_1.fixDb.getAll();
+    const prs = database_1.prDb.getAll();
+    res.json(buildBugfixStats(reports, fixes, prs));
+});
+app.get('/api/bugfix/:reportId/timeline', (req, res) => {
+    const report = bugReport_1.bugReportManager.getReport(req.params.reportId);
+    if (!report) {
+        res.status(404).json({ error: 'Report not found' });
+        return;
+    }
+    const fix = report.fixId ? database_1.fixDb.get(report.fixId) : undefined;
+    const pr = report.prId ? database_1.prDb.get(report.prId) : undefined;
+    res.json({
+        report,
+        investigation: report.investigationResult ?? null,
+        fix: fix ?? null,
+        pr: pr ?? null,
+        timeline: buildTimeline(report, fix, pr),
+    });
+});
+app.post('/api/bugfix/:reportId/generate-fix', async (req, res) => {
+    const report = bugReport_1.bugReportManager.getReport(req.params.reportId);
+    if (!report) {
+        res.status(404).json({ error: 'Report not found' });
+        return;
+    }
+    // Run investigation if not done yet
+    if (!report.investigationResult) {
+        report.investigationResult = bugReport_1.bugReportManager.investigateReport(report);
+    }
+    // Confirm and generate fix
+    bugReport_1.bugReportManager.confirmReport(report.id);
+    try {
+        const fix = await bugFixer_1.bugFixer.generateFix(report);
+        database_1.fixDb.set(fix);
+        report.fixId = fix.id;
+        report.status = 'fix_generated';
+        bugReport_1.bugReportManager.persistReport(report);
+        console.log(`[Pipeline] Manual fix generated for report ${report.id}: fix ${fix.id}`);
+        res.json({ report, fix });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[Pipeline] Fix generation failed:', message);
+        res.status(500).json({ error: message });
+    }
+});
+app.post('/api/bugfix/:reportId/skip', (req, res) => {
+    const { reason } = req.body;
+    const report = bugReport_1.bugReportManager.skipReport(req.params.reportId, reason ?? 'Manually skipped via API');
+    if (!report) {
+        res.status(404).json({ error: 'Report not found' });
+        return;
+    }
+    res.json(report);
+});
+// ── Helper Functions ───────────────────────────────────────────────────────────
+function buildBugfixStats(reports, fixes, prs) {
+    return {
+        totalReports: reports.length,
+        pendingReports: reports.filter(r => r.status === 'needs_investigation').length,
+        confirmedBugs: reports.filter(r => r.status === 'confirmed').length,
+        fixesGenerated: fixes.length,
+        fixesSucceeded: fixes.filter(f => f.status === 'generated' || f.status === 'applied').length,
+        prsCreated: prs.length,
+        prsSucceeded: prs.filter(p => p.status === 'created' || p.status === 'merged').length,
+        skipped: reports.filter(r => r.status === 'skipped').length,
+        resolved: reports.filter(r => r.status === 'resolved').length,
+        autoFixRate: reports.length > 0
+            ? ((fixes.length / Math.max(1, reports.filter(r => r.status !== 'invalid').length)) * 100).toFixed(1) + '%'
+            : '0%',
+    };
+}
+function buildTimeline(report, fix, pr) {
+    const events = [];
+    events.push({ timestamp: report.timestamp, event: 'reported', detail: `Bug report submitted by ${report.playerName}` });
+    if (report.validationResult) {
+        events.push({
+            timestamp: report.timestamp + 1,
+            event: 'validated',
+            detail: report.validationResult.isValid ? 'Report validated as genuine' : `Marked invalid: ${report.validationResult.reason}`,
+        });
+    }
+    if (report.investigationResult) {
+        const v = report.investigationResult.ruleViolations.length;
+        events.push({
+            timestamp: report.timestamp + 2,
+            event: 'investigated',
+            detail: v > 0 ? `${v} rule violation(s) found — status: confirmed` : 'No violations — report may be cosmetic',
+        });
+    }
+    if (fix) {
+        events.push({ timestamp: fix.timestamp, event: 'fix_generated', detail: `Patch generated for ${fix.targetFile} (confidence ${(fix.confidence * 100).toFixed(0)}%)` });
+    }
+    if (pr) {
+        events.push({
+            timestamp: pr.timestamp,
+            event: 'pr_created',
+            detail: pr.prUrl ? `PR created: ${pr.prUrl}` : `PR creation ${pr.status === 'failed' ? 'failed' : 'queued'}`,
+        });
+    }
+    return events.sort((a, b) => a.timestamp - b.timestamp);
+}
 // ── Socket.io ──────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
@@ -147,7 +278,9 @@ io.on('connection', (socket) => {
         };
         const submitted = bugReport_1.bugReportManager.submitReport(report);
         if (submitted.validationResult?.isValid) {
-            bugReport_1.bugReportManager.investigateReport(submitted);
+            const investigation = bugReport_1.bugReportManager.investigateReport(submitted);
+            submitted.investigationResult = investigation;
+            bugReport_1.bugReportManager.persistReport(submitted);
         }
         if (typeof callback === 'function') {
             callback(submitted);
@@ -178,6 +311,108 @@ setInterval(() => {
     const result = bugReport_1.bugReportManager.runRuleSimulation();
     console.log(`[RuleSimulation] ${result.passed ? 'PASSED' : 'FAILED'} — ${result.violations.length} violation(s)`);
 }, 5 * 60 * 1000);
+// ── Continuous Bug-Fix Pipeline Loop ─────────────────────────────────────────
+// Tier 1 (30 s) : Check for new pending reports and run investigation
+// Tier 2 (60 s) : Confirm investigated reports that have violations
+// Tier 3 (2 min): Generate fixes for confirmed-but-unfixed reports
+// Tier 4 (5 min): Create PRs for generated-but-un-PR'd fixes (batch)
+// Tier 5 (10 min): Re-verify confirmed fixes by re-running simulation
+let runningTiers = new Set();
+async function runPipelineTick(tier) {
+    if (runningTiers.has(tier))
+        return; // prevent overlapping runs of same tier
+    if (tier >= 3 && runningTiers.size > 0)
+        return; // heavy tiers skip if any tier is running
+    const reports = bugReport_1.bugReportManager.getReports();
+    // --- Tier 1: Investigate pending reports ---
+    if (tier === 1) {
+        const pending = reports.filter(r => r.status === 'needs_investigation' && !r.investigationResult);
+        for (const report of pending) {
+            const result = bugReport_1.bugReportManager.investigateReport(report);
+            report.investigationResult = result;
+            bugReport_1.bugReportManager.persistReport(report);
+            console.log(`[Pipeline:T1] Investigated report ${report.id} — ${result.ruleViolations.length} violation(s)`);
+        }
+    }
+    // --- Tier 2: Confirm investigated reports with violations ---
+    if (tier === 2) {
+        const investigated = reports.filter(r => r.status === 'needs_investigation' && r.investigationResult);
+        for (const report of investigated) {
+            const violations = report.investigationResult.ruleViolations.length;
+            if (violations > 0) {
+                bugReport_1.bugReportManager.confirmReport(report.id);
+                console.log(`[Pipeline:T2] Confirmed report ${report.id} (${violations} violations)`);
+            }
+        }
+    }
+    // --- Tier 3: Generate fixes for confirmed reports ---
+    if (tier === 3) {
+        runningTiers.add(3);
+        try {
+            const needsFix = reports.filter(r => r.status === 'confirmed' && !r.fixId);
+            for (const report of needsFix) {
+                try {
+                    const fix = await bugFixer_1.bugFixer.generateFix(report);
+                    database_1.fixDb.set(fix);
+                    report.fixId = fix.id;
+                    report.status = 'fix_generated';
+                    bugReport_1.bugReportManager.persistReport(report);
+                    console.log(`[Pipeline:T3] Fix generated for report ${report.id} → fix ${fix.id}`);
+                }
+                catch (err) {
+                    console.error(`[Pipeline:T3] Fix generation failed for ${report.id}:`, err);
+                }
+            }
+        }
+        finally {
+            runningTiers.delete(3);
+        }
+    }
+    // --- Tier 4: Create PRs for fixed-but-un-PR'd reports ---
+    if (tier === 4) {
+        runningTiers.add(4);
+        try {
+            const needsPr = reports.filter(r => r.status === 'fix_generated' && r.fixId && !r.prId);
+            for (const report of needsPr) {
+                const fix = database_1.fixDb.get(report.fixId);
+                if (!fix)
+                    continue;
+                try {
+                    const pr = await gitIntegration_1.gitIntegration.createPullRequest(report, fix);
+                    database_1.prDb.set(pr);
+                    report.prId = pr.id;
+                    report.prUrl = pr.prUrl;
+                    report.status = 'pr_created';
+                    bugReport_1.bugReportManager.persistReport(report);
+                    console.log(`[Pipeline:T4] PR created for report ${report.id} → ${pr.prUrl ?? 'simulated'}`);
+                }
+                catch (err) {
+                    console.error(`[Pipeline:T4] PR creation failed for ${report.id}:`, err);
+                }
+            }
+        }
+        finally {
+            runningTiers.delete(4);
+        }
+    }
+    // --- Tier 5: Re-verify all fixes by running simulation ---
+    if (tier === 5) {
+        const result = bugReport_1.bugReportManager.runRuleSimulation();
+        const fixedCount = reports.filter(r => r.status === 'pr_created' || r.status === 'resolved').length;
+        console.log(`[Pipeline:T5] Re-verification simulation ${result.passed ? 'PASSED' : 'FAILED'} — ` +
+            `${result.violations.length} violation(s), ${fixedCount} reports with PRs/resolved`);
+    }
+}
+// Tier 1: every 30 seconds — investigate pending reports
+setInterval(() => void runPipelineTick(1), 30 * 1000);
+// Tier 2: every 60 seconds — confirm investigated reports
+setInterval(() => void runPipelineTick(2), 60 * 1000);
+// Tier 3: every 2 minutes — generate fixes
+setInterval(() => void runPipelineTick(3), 2 * 60 * 1000);
+// Tier 4: every 5 minutes — create PRs
+setInterval(() => void runPipelineTick(4), 5 * 60 * 1000);
+// Tier 5: every 10 minutes — re-verify
+setInterval(() => void runPipelineTick(5), 10 * 60 * 1000);
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on 0.0.0.0:${PORT}`);
 });
