@@ -9,6 +9,7 @@ import {
     getManilhaRank,
     setManilhas
 } from './gameLogic';
+import { reportDb } from './database';
 
 // ─── Types & Interfaces ────────────────────────────────────────────────────────
 
@@ -24,6 +25,9 @@ export type BugStatus =
     | 'invalid'
     | 'needs_investigation'
     | 'confirmed'
+    | 'fix_generated'
+    | 'pr_created'
+    | 'skipped'
     | 'resolved';
 
 export interface GameSnapshot {
@@ -76,6 +80,10 @@ export interface BugReport {
     status: BugStatus;
     validationResult?: ValidationResult;
     investigationResult?: InvestigationResult;
+    fixId?: string;
+    prId?: string;
+    prUrl?: string;
+    skippedReason?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -101,6 +109,12 @@ export class BugReportManager {
     public reports: BugReport[] = [];
     public simulationResults: SimulationResult[] = [];
     public gameEventLogs: Map<string, string[]> = new Map();
+
+    constructor() {
+        // Load persisted reports from disk
+        this.reports = reportDb.getAll();
+        console.log(`[BugReportManager] Loaded ${this.reports.length} persisted reports.`);
+    }
 
     // ── Event Logging ──────────────────────────────────────────────────────
 
@@ -156,6 +170,7 @@ export class BugReportManager {
         }
 
         this.reports.push(report);
+        reportDb.set(report);
         return report;
     }
 
@@ -282,6 +297,40 @@ export class BugReportManager {
             : 'No fix needed based on current analysis.';
 
         return { ruleViolations: violations, suspectedFunction, explanation, suggestedFix };
+    }
+
+    // ── Persist a report update ────────────────────────────────────────────────
+
+    persistReport(report: BugReport): void {
+        const idx = this.reports.findIndex(r => r.id === report.id);
+        if (idx >= 0) {
+            this.reports[idx] = report;
+        } else {
+            this.reports.push(report);
+        }
+        reportDb.set(report);
+    }
+
+    // ── Mark report as confirmed ───────────────────────────────────────────────
+
+    confirmReport(reportId: string): BugReport | undefined {
+        const report = this.reports.find(r => r.id === reportId);
+        if (!report) return undefined;
+        if (report.status !== 'needs_investigation') return report;
+        report.status = 'confirmed';
+        this.persistReport(report);
+        return report;
+    }
+
+    // ── Mark report as skipped ─────────────────────────────────────────────────
+
+    skipReport(reportId: string, reason: string): BugReport | undefined {
+        const report = this.reports.find(r => r.id === reportId);
+        if (!report) return undefined;
+        report.status = 'skipped';
+        report.skippedReason = reason;
+        this.persistReport(report);
+        return report;
     }
 
     private guessSuspectedFunction(
