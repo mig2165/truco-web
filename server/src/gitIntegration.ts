@@ -22,6 +22,102 @@ export class GitIntegration {
         }
     }
 
+    // ── GitHub Issues ──────────────────────────────────────────────────────────
+
+    /**
+     * Opens a GitHub Issue for the given bug report so that collaborators can
+     * track it independently of the auto-fix pipeline.  Returns the new issue
+     * number and URL, or null when the GitHub token is not configured.
+     */
+    async createGithubIssue(report: BugReport): Promise<{ issueNumber: number; issueUrl: string } | null> {
+        if (!this.githubToken) {
+            console.log('[GitIntegration] Skipping GitHub Issue creation — no GITHUB_TOKEN');
+            return null;
+        }
+
+        const categoryEmoji: Record<string, string> = {
+            gameplay_bug: '🎮',
+            ui_bug: '🖥️',
+            scoring_bug: '🔢',
+            hand_call_bug: '🃏',
+            other: '🐛',
+        };
+        const emoji = categoryEmoji[report.category] ?? '🐛';
+        const descChars = Array.from(report.description);
+        const truncDesc = descChars.length > 80 ? descChars.slice(0, 80).join('') + '…' : report.description;
+        const title = `${emoji} [${report.category}] ${truncDesc}`;
+
+        const body = `## Bug Report — \`${report.id}\`
+
+| Field | Value |
+|-------|-------|
+| **Reported By** | ${report.playerName} |
+| **Category** | \`${report.category}\` |
+| **Timestamp** | ${new Date(report.timestamp).toISOString()} |
+| **Room ID** | \`${report.roomId}\` |
+| **Status** | \`${report.status}\` |
+
+### Description
+> ${report.description}
+
+---
+
+*This issue was created automatically by the Truco bug-report pipeline.  
+It will be updated as the report moves through the auto-fix workflow.*`;
+
+        try {
+            const issue = await this.githubRequest<{ number: number; html_url: string }>('/issues', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title,
+                    body,
+                    labels: ['bug-report', report.category],
+                }),
+            });
+            console.log(`[GitIntegration] Created GitHub Issue #${issue.number}: ${issue.html_url}`);
+            return { issueNumber: issue.number, issueUrl: issue.html_url };
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error('[GitIntegration] Failed to create GitHub Issue:', message);
+            return null;
+        }
+    }
+
+    /**
+     * Adds a comment to an existing GitHub Issue (e.g. when the report is
+     * auto-fixed or resolved).
+     */
+    async addGithubIssueComment(issueNumber: number, body: string): Promise<void> {
+        if (!this.githubToken) return;
+        try {
+            await this.githubRequest(`/issues/${issueNumber}/comments`, {
+                method: 'POST',
+                body: JSON.stringify({ body }),
+            });
+            console.log(`[GitIntegration] Added comment to Issue #${issueNumber}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`[GitIntegration] Failed to add comment to Issue #${issueNumber}:`, message);
+        }
+    }
+
+    /**
+     * Closes a GitHub Issue (used when the bug has been resolved or the PR merged).
+     */
+    async closeGithubIssue(issueNumber: number): Promise<void> {
+        if (!this.githubToken) return;
+        try {
+            await this.githubRequest(`/issues/${issueNumber}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ state: 'closed', state_reason: 'completed' }),
+            });
+            console.log(`[GitIntegration] Closed GitHub Issue #${issueNumber}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`[GitIntegration] Failed to close Issue #${issueNumber}:`, message);
+        }
+    }
+
     async createPullRequest(report: BugReport, fix: FixRecord): Promise<PullRequestRecord> {
         const branchName = `auto-fix/bug-${report.id.substring(0, 12)}`;
         const recordBase: Omit<PullRequestRecord, 'prNumber' | 'prUrl' | 'errorMessage'> = {

@@ -67,6 +67,20 @@ function createSnapshotForRoom(roomId: string): GameSnapshot {
   };
 }
 
+/**
+ * Fire-and-forget: open a GitHub Issue for a valid report so all collaborators
+ * can see it on GitHub independently of the auto-fix pipeline.
+ */
+function attachGithubIssue(report: BugReport): void {
+  void gitIntegration.createGithubIssue(report).then(issue => {
+    if (issue) {
+      report.githubIssueNumber = issue.issueNumber;
+      report.githubIssueUrl = issue.issueUrl;
+      bugReportManager.persistReport(report);
+    }
+  });
+}
+
 app.post('/api/reports', (req, res) => {
   const { roomId, playerId, playerName, description, category, screenshotData } = req.body;
 
@@ -89,6 +103,12 @@ app.post('/api/reports', (req, res) => {
   };
 
   const submitted = bugReportManager.submitReport(report);
+
+  // Fire-and-forget: create a GitHub Issue so collaborators always have access.
+  if (submitted.status !== 'invalid') {
+    attachGithubIssue(submitted);
+  }
+
   res.json(submitted);
 });
 
@@ -216,6 +236,16 @@ app.post('/api/bugfix/:reportId/generate-fix', async (req, res) => {
     report.status = 'fix_generated';
     bugReportManager.persistReport(report);
     console.log(`[Pipeline] Manual fix generated for report ${report.id}: fix ${fix.id}`);
+
+    if (report.githubIssueNumber) {
+      void gitIntegration.addGithubIssueComment(
+        report.githubIssueNumber,
+        `🔧 **Fix generated via manual trigger** (Fix ID: \`${fix.id}\`)\n\n` +
+        `**Target file:** \`${fix.targetFile}\`  \n` +
+        `**Confidence:** ${(fix.confidence * 100).toFixed(0)}%`,
+      );
+    }
+
     res.json({ report, fix });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -340,6 +370,11 @@ io.on('connection', (socket) => {
         bugReportManager.persistReport(submitted);
       }
 
+      // Fire-and-forget: create a GitHub Issue so collaborators always have access.
+      if (submitted.status !== 'invalid') {
+        attachGithubIssue(submitted);
+      }
+
       if (typeof callback === 'function') {
         // Send a minimal ack (no screenshotData) to avoid large payloads.
         callback({ id: submitted.id, status: submitted.status });
@@ -430,6 +465,16 @@ async function runPipelineTick(tier: number): Promise<void> {
           report.status = 'fix_generated';
           bugReportManager.persistReport(report);
           console.log(`[Pipeline:T3] Fix generated for report ${report.id} → fix ${fix.id}`);
+
+          if (report.githubIssueNumber) {
+            void gitIntegration.addGithubIssueComment(
+              report.githubIssueNumber,
+              `🔧 **Automated fix generated** (Fix ID: \`${fix.id}\`)\n\n` +
+              `**Target file:** \`${fix.targetFile}\`  \n` +
+              `**Confidence:** ${(fix.confidence * 100).toFixed(0)}%\n\n` +
+              `A pull request will be opened shortly.`,
+            );
+          }
         } catch (err) {
           console.error(`[Pipeline:T3] Fix generation failed for ${report.id}:`, err);
         }
@@ -455,6 +500,13 @@ async function runPipelineTick(tier: number): Promise<void> {
           report.status = 'pr_created';
           bugReportManager.persistReport(report);
           console.log(`[Pipeline:T4] PR created for report ${report.id} → ${pr.prUrl ?? 'simulated'}`);
+
+          if (report.githubIssueNumber && pr.prUrl) {
+            void gitIntegration.addGithubIssueComment(
+              report.githubIssueNumber,
+              `🚀 **Pull request opened:** ${pr.prUrl}\n\nReview and merge to resolve this bug.`,
+            );
+          }
         } catch (err) {
           console.error(`[Pipeline:T4] PR creation failed for ${report.id}:`, err);
         }
