@@ -315,32 +315,40 @@ io.on('connection', (socket) => {
   });
 
   // Real-time bug report submission
-  socket.on('submitBugReport', (data: { roomId: string; description: string; category: string; screenshotData?: string }, callback?: (report: BugReport) => void) => {
-    const player = findPlayerBySocket(socket.id);
+  socket.on('submitBugReport', (data: { roomId: string; description: string; category: string; screenshotData?: string }, callback?: (response: { id: string; status: string }) => void) => {
+    try {
+      const player = findPlayerBySocket(socket.id);
 
-    const report: BugReport = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      roomId: data.roomId,
-      playerId: player?.id ?? socket.id,
-      playerName: player?.name ?? 'Unknown',
-      description: data.description,
-      category: data.category as BugCategory,
-      screenshotData: data.screenshotData,
-      gameSnapshot: createSnapshotForRoom(data.roomId),
-      timestamp: Date.now(),
-      status: 'pending',
-    };
+      const report: BugReport = {
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        roomId: data.roomId,
+        playerId: player?.id ?? socket.id,
+        playerName: player?.name ?? 'Unknown',
+        description: data.description,
+        category: data.category as BugCategory,
+        screenshotData: data.screenshotData,
+        gameSnapshot: createSnapshotForRoom(data.roomId),
+        timestamp: Date.now(),
+        status: 'pending',
+      };
 
-    const submitted = bugReportManager.submitReport(report);
+      const submitted = bugReportManager.submitReport(report);
 
-    if (submitted.validationResult?.isValid) {
-      const investigation = bugReportManager.investigateReport(submitted);
-      submitted.investigationResult = investigation;
-      bugReportManager.persistReport(submitted);
-    }
+      if (submitted.validationResult?.isValid) {
+        const investigation = bugReportManager.investigateReport(submitted);
+        submitted.investigationResult = investigation;
+        bugReportManager.persistReport(submitted);
+      }
 
-    if (typeof callback === 'function') {
-      callback(submitted);
+      if (typeof callback === 'function') {
+        // Send a minimal ack (no screenshotData) to avoid large payloads.
+        callback({ id: submitted.id, status: submitted.status });
+      }
+    } catch (err) {
+      console.error('[submitBugReport] Unexpected error:', err);
+      if (typeof callback === 'function') {
+        callback({ id: '', status: 'error' });
+      }
     }
   });
 });

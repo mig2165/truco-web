@@ -196,7 +196,8 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     };
 
     const getRelativePlayer = (offset: number) => {
-        const myIndex = Math.max(0, gameState.players.findIndex((p: any) => p.id === currentPlayerId));
+        const myIndex = gameState.players.findIndex((p: any) => p.id === currentPlayerId);
+        if (myIndex === -1) return undefined;
         const targetIndex = (myIndex + offset) % 4;
         return gameState.players[targetIndex];
     };
