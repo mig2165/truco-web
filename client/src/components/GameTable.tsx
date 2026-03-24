@@ -34,13 +34,26 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const [debugHandDrafts, setDebugHandDrafts] = useState<Record<string, DebugHandCard[]>>({});
     const lastTableSignatureRef = useRef<string>('');
     const lastRoomRef = useRef<string>('');
+    const pewPewTimeoutRef = useRef<number | null>(null);
 
     const isClubsManilha = (card: any) => card?.isManilha && card?.suit === 'clubs';
+
+    useEffect(() => {
+        return () => {
+            if (pewPewTimeoutRef.current !== null) {
+                window.clearTimeout(pewPewTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (!gameState) {
             lastTableSignatureRef.current = '';
             lastRoomRef.current = '';
+            if (pewPewTimeoutRef.current !== null) {
+                window.clearTimeout(pewPewTimeoutRef.current);
+                pewPewTimeoutRef.current = null;
+            }
             setPewPewActive(false);
             return;
         }
@@ -53,6 +66,10 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         if (lastRoomRef.current !== gameState.roomId) {
             lastRoomRef.current = gameState.roomId;
             lastTableSignatureRef.current = currentSignature;
+            if (pewPewTimeoutRef.current !== null) {
+                window.clearTimeout(pewPewTimeoutRef.current);
+                pewPewTimeoutRef.current = null;
+            }
             setPewPewActive(false);
             return;
         }
@@ -72,13 +89,16 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         setPewPewBurstId((previousBurstId) => previousBurstId + 1);
         setPewPewActive(true);
 
-        const stopEffectTimer = window.setTimeout(() => {
-            setPewPewActive(false);
-        }, PEW_PEW_DURATION_MS);
+        // Keep a single live timeout so unrelated gameState updates do not
+        // cancel the overlay teardown before it runs.
+        if (pewPewTimeoutRef.current !== null) {
+            window.clearTimeout(pewPewTimeoutRef.current);
+        }
 
-        return () => {
-            window.clearTimeout(stopEffectTimer);
-        };
+        pewPewTimeoutRef.current = window.setTimeout(() => {
+            setPewPewActive(false);
+            pewPewTimeoutRef.current = null;
+        }, PEW_PEW_DURATION_MS);
     }, [gameState]);
 
     useEffect(() => {

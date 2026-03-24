@@ -19,7 +19,8 @@
     width: 100vw;
     height: 100vh;
     z-index: 2200;
-    pointer-events: auto;
+    /* Cosmetic only: never let the zap layer trap clicks after the effect. */
+    pointer-events: none;
     overflow: hidden;
     animation: pewPewOverlay var(--pew-pew-duration) ease-out forwards;
 }
