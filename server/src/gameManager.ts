@@ -559,12 +559,17 @@ export class TrucoGameManager {
                         state._maoCallerId = undefined;
                         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
 
+                        // Always clear the reveal flag regardless of outcome or deck size.
+                        caller.exposedHand = false;
+
                         if (isTruth) {
                             if (state.deck.length >= 3) {
                                 caller.hand = setManilhas([state.deck.pop()!, state.deck.pop()!, state.deck.pop()!], state.manilhaRank!);
                                 caller.maoBaixaReady = false;
-                                caller.exposedHand = false;
                             }
+                            // If the deck was too short to redeal, the caller keeps their current hand.
+                            // maoBaixaReady was already set to true when they originally called mao_baixa,
+                            // so they proceed to the trick phase with what they have.
                             state.currentTurnIndex = callerIndex;
                         } else {
                             caller.maoBaixaReady = true;

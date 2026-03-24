@@ -160,6 +160,14 @@
     cursor: not-allowed;
 }
 
+/* ── Field-level validation error ── */
+.report-field-error {
+    color: #f87171;
+    font-size: 0.8rem;
+    margin-top: -0.25rem;
+    margin-bottom: 0.25rem;
+}
+
 /* ── Result messages ── */
 .report-result {
     display: flex;

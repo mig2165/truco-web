@@ -23,12 +23,29 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
     const [description, setDescription] = useState('');
     const [category, setCategory] = useState(CATEGORIES[0].value);
     const [screenshotData, setScreenshotData] = useState<string | null>(null);
+    const [screenshotError, setScreenshotError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+    const pendingTimeoutRef = React.useRef<number | undefined>(undefined);
+
+    // Cancel any in-flight timeout when the modal unmounts.
+    React.useEffect(() => {
+        return () => { window.clearTimeout(pendingTimeoutRef.current); };
+    }, []);
+
+    const MAX_SCREENSHOT_BYTES = 500 * 1024; // 500 KB – safe under Socket.IO 1 MB default
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        setScreenshotError(null);
         if (!file) { setScreenshotData(null); return; }
+
+        if (file.size > MAX_SCREENSHOT_BYTES) {
+            e.target.value = '';
+            setScreenshotData(null);
+            setScreenshotError(`Image too large (${Math.round(file.size / 1024)} KB). Please use an image under 500 KB.`);
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = () => setScreenshotData(reader.result as string);
@@ -40,15 +57,31 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
         if (!description.trim() || !socket) return;
 
         setSubmitting(true);
+        let settled = false;
+
+        pendingTimeoutRef.current = window.setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                pendingTimeoutRef.current = undefined;
+                setSubmitting(false);
+                setResult({ ok: false, message: 'Submission timed out. Please check your connection and try again.' });
+            }
+        }, 10000);
+
         socket.emit(
             'submitBugReport',
             { roomId, description: description.trim(), category, screenshotData },
-            (report: { id: string; status: string }) => {
-                setSubmitting(false);
-                if (report?.id) {
-                    setResult({ ok: true, message: `Report submitted (ID: ${report.id}). Status: ${report.status}` });
-                } else {
-                    setResult({ ok: false, message: 'Failed to submit report. Please try again.' });
+            (response: { id: string; status: string }) => {
+                if (!settled) {
+                    settled = true;
+                    window.clearTimeout(pendingTimeoutRef.current);
+                    pendingTimeoutRef.current = undefined;
+                    setSubmitting(false);
+                    if (response?.id) {
+                        setResult({ ok: true, message: `Report submitted (ID: ${response.id}). Status: ${response.status}` });
+                    } else {
+                        setResult({ ok: false, message: 'Failed to submit report. Please try again.' });
+                    }
                 }
             },
         );
@@ -99,7 +132,7 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
                             ))}
                         </select>
 
-                        <label className="report-label" htmlFor="report-screenshot">Screenshot (optional)</label>
+                        <label className="report-label" htmlFor="report-screenshot">Screenshot (optional, max 500 KB)</label>
                         <input
                             id="report-screenshot"
                             className="report-file"
@@ -107,6 +140,9 @@ export default function ReportModal({ socket, roomId, playerName, gameState, onC
                             accept="image/*"
                             onChange={handleFileChange}
                         />
+                        {screenshotError && (
+                            <p className="report-field-error">{screenshotError}</p>
+                        )}
 
                         <div className="report-auto-info">
                             <p><strong>Auto-collected info</strong></p>
