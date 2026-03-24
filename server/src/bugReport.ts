@@ -84,6 +84,8 @@ export interface BugReport {
     prId?: string;
     prUrl?: string;
     skippedReason?: string;
+    githubIssueNumber?: number;
+    githubIssueUrl?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
