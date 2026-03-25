@@ -61,6 +61,19 @@ function createSnapshotForRoom(roomId) {
         tricks: { team1: 0, team2: 0 },
     };
 }
+/**
+ * Fire-and-forget: open a GitHub Issue for a valid report so all collaborators
+ * can see it on GitHub independently of the auto-fix pipeline.
+ */
+function attachGithubIssue(report) {
+    void gitIntegration_1.gitIntegration.createGithubIssue(report).then(issue => {
+        if (issue) {
+            report.githubIssueNumber = issue.issueNumber;
+            report.githubIssueUrl = issue.issueUrl;
+            bugReport_1.bugReportManager.persistReport(report);
+        }
+    });
+}
 app.post('/api/reports', (req, res) => {
     const { roomId, playerId, playerName, description, category, screenshotData } = req.body;
     if (!roomId || !playerId || !playerName || !description || !category) {
@@ -80,6 +93,10 @@ app.post('/api/reports', (req, res) => {
         status: 'pending',
     };
     const submitted = bugReport_1.bugReportManager.submitReport(report);
+    // Fire-and-forget: create a GitHub Issue so collaborators always have access.
+    if (submitted.status !== 'invalid') {
+        attachGithubIssue(submitted);
+    }
     res.json(submitted);
 });
 app.get('/api/reports', (_req, res) => {
@@ -187,6 +204,11 @@ app.post('/api/bugfix/:reportId/generate-fix', async (req, res) => {
         report.status = 'fix_generated';
         bugReport_1.bugReportManager.persistReport(report);
         console.log(`[Pipeline] Manual fix generated for report ${report.id}: fix ${fix.id}`);
+        if (report.githubIssueNumber) {
+            void gitIntegration_1.gitIntegration.addGithubIssueComment(report.githubIssueNumber, `🔧 **Fix generated via manual trigger** (Fix ID: \`${fix.id}\`)\n\n` +
+                `**Target file:** \`${fix.targetFile}\`  \n` +
+                `**Confidence:** ${(fix.confidence * 100).toFixed(0)}%`);
+        }
         res.json({ report, fix });
     }
     catch (err) {
@@ -263,27 +285,40 @@ io.on('connection', (socket) => {
     });
     // Real-time bug report submission
     socket.on('submitBugReport', (data, callback) => {
-        const player = findPlayerBySocket(socket.id);
-        const report = {
-            id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            roomId: data.roomId,
-            playerId: player?.id ?? socket.id,
-            playerName: player?.name ?? 'Unknown',
-            description: data.description,
-            category: data.category,
-            screenshotData: data.screenshotData,
-            gameSnapshot: createSnapshotForRoom(data.roomId),
-            timestamp: Date.now(),
-            status: 'pending',
-        };
-        const submitted = bugReport_1.bugReportManager.submitReport(report);
-        if (submitted.validationResult?.isValid) {
-            const investigation = bugReport_1.bugReportManager.investigateReport(submitted);
-            submitted.investigationResult = investigation;
-            bugReport_1.bugReportManager.persistReport(submitted);
+        try {
+            const player = findPlayerBySocket(socket.id);
+            const report = {
+                id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                roomId: data.roomId,
+                playerId: player?.id ?? socket.id,
+                playerName: player?.name ?? 'Unknown',
+                description: data.description,
+                category: data.category,
+                screenshotData: data.screenshotData,
+                gameSnapshot: createSnapshotForRoom(data.roomId),
+                timestamp: Date.now(),
+                status: 'pending',
+            };
+            const submitted = bugReport_1.bugReportManager.submitReport(report);
+            if (submitted.validationResult?.isValid) {
+                const investigation = bugReport_1.bugReportManager.investigateReport(submitted);
+                submitted.investigationResult = investigation;
+                bugReport_1.bugReportManager.persistReport(submitted);
+            }
+            // Fire-and-forget: create a GitHub Issue so collaborators always have access.
+            if (submitted.status !== 'invalid') {
+                attachGithubIssue(submitted);
+            }
+            if (typeof callback === 'function') {
+                // Send a minimal ack (no screenshotData) to avoid large payloads.
+                callback({ id: submitted.id, status: submitted.status });
+            }
         }
-        if (typeof callback === 'function') {
-            callback(submitted);
+        catch (err) {
+            console.error('[submitBugReport] Unexpected error:', err);
+            if (typeof callback === 'function') {
+                callback({ id: '', status: 'error' });
+            }
         }
     });
 });
@@ -358,6 +393,12 @@ async function runPipelineTick(tier) {
                     report.status = 'fix_generated';
                     bugReport_1.bugReportManager.persistReport(report);
                     console.log(`[Pipeline:T3] Fix generated for report ${report.id} → fix ${fix.id}`);
+                    if (report.githubIssueNumber) {
+                        void gitIntegration_1.gitIntegration.addGithubIssueComment(report.githubIssueNumber, `🔧 **Automated fix generated** (Fix ID: \`${fix.id}\`)\n\n` +
+                            `**Target file:** \`${fix.targetFile}\`  \n` +
+                            `**Confidence:** ${(fix.confidence * 100).toFixed(0)}%\n\n` +
+                            `A pull request will be opened shortly.`);
+                    }
                 }
                 catch (err) {
                     console.error(`[Pipeline:T3] Fix generation failed for ${report.id}:`, err);
@@ -385,6 +426,9 @@ async function runPipelineTick(tier) {
                     report.status = 'pr_created';
                     bugReport_1.bugReportManager.persistReport(report);
                     console.log(`[Pipeline:T4] PR created for report ${report.id} → ${pr.prUrl ?? 'simulated'}`);
+                    if (report.githubIssueNumber && pr.prUrl) {
+                        void gitIntegration_1.gitIntegration.addGithubIssueComment(report.githubIssueNumber, `🚀 **Pull request opened:** ${pr.prUrl}\n\nReview and merge to resolve this bug.`);
+                    }
                 }
                 catch (err) {
                     console.error(`[Pipeline:T4] PR creation failed for ${report.id}:`, err);

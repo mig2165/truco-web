@@ -451,12 +451,18 @@ class TrucoGameManager {
                         state._maoType = undefined;
                         state._maoCallerId = undefined;
                         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
+                        // A failed Mao call keeps the caller's remaining cards exposed
+                        // until the round naturally resets. Truthful calls or redeals
+                        // still clear the reveal because the hand is no longer public.
+                        caller.exposedHand = !isTruth;
                         if (isTruth) {
                             if (state.deck.length >= 3) {
                                 caller.hand = (0, gameLogic_1.setManilhas)([state.deck.pop(), state.deck.pop(), state.deck.pop()], state.manilhaRank);
                                 caller.maoBaixaReady = false;
-                                caller.exposedHand = false;
                             }
+                            // If the deck was too short to redeal, the caller keeps their current hand.
+                            // maoBaixaReady was already set to true when they originally called mao_baixa,
+                            // so they proceed to the trick phase with what they have.
                             state.currentTurnIndex = callerIndex;
                         }
                         else {

@@ -559,8 +559,10 @@ export class TrucoGameManager {
                         state._maoCallerId = undefined;
                         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
 
-                        // Always clear the reveal flag regardless of outcome or deck size.
-                        caller.exposedHand = false;
+                        // A failed Mao call keeps the caller's remaining cards exposed
+                        // until the round naturally resets. Truthful calls or redeals
+                        // still clear the reveal because the hand is no longer public.
+                        caller.exposedHand = !isTruth;
 
                         if (isTruth) {
                             if (state.deck.length >= 3) {

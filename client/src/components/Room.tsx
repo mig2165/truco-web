@@ -2,6 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { Users, Info, Copy, BookOpen } from 'lucide-react';
+import {
+    getBrowserNotificationPermission,
+    isBrowserNotificationSupported,
+    requestBrowserNotificationPermission,
+    sendBrowserNotification
+} from '../lib/browserNotifications';
+import type { BrowserNotificationPermission } from '../lib/browserNotifications';
 import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
@@ -23,6 +30,62 @@ type RoomPreviewState = {
     players: RoomPreviewPlayer[];
 };
 
+type PlayerActionRequirement = {
+    key: string;
+    body: string;
+};
+
+const isBrowserTabInactive = () =>
+    typeof document !== 'undefined' && (document.visibilityState === 'hidden' || !document.hasFocus());
+
+const getActionRequirement = (state: any, currentPlayerId: string | undefined): PlayerActionRequirement | null => {
+    if (!state || !currentPlayerId || state.status !== 'playing') {
+        return null;
+    }
+
+    const me = state.players.find((player: any) => player.id === currentPlayerId);
+    if (!me) {
+        return null;
+    }
+
+    if (state._phase === 'MAO_DE_ONZE_DECISION' && state.maoDeOnzeTeam === me.team) {
+        return {
+            key: 'mao-de-onze',
+            body: 'Your team needs to decide whether to play or run in Mão de Onze.'
+        };
+    }
+
+    if (state.callState?.awaitingResponseFromTeam === me.team) {
+        const isMaoCall = state.callState.type === 'mao_baixa' || state.callState.type === 'mao_real';
+
+        return {
+            key: `respond-${state.callState.type ?? 'call'}`,
+            body: isMaoCall
+                ? `The other team called ${state.callState.type === 'mao_baixa' ? 'Mão Baixa' : 'Mão Real'}. You need to respond.`
+                : `The other team called ${String(state.callState.type ?? 'Truco').toUpperCase()}. You need to respond.`
+        };
+    }
+
+    if (state._phase === 'WAITING_FOR_HAND_PHASE' && !me.maoBaixaReady) {
+        return {
+            key: 'review-hand',
+            body: 'Review your hand and choose whether to keep it or make a Mão call.'
+        };
+    }
+
+    const allPlayersReady = state.players.every((player: any) => player.maoBaixaReady);
+    const isMyTurn = state.players[state.currentTurnIndex]?.id === currentPlayerId;
+
+    if (state._phase === 'TRICK_PHASE' && allPlayersReady && isMyTurn && state.callState?.awaitingResponseFromTeam == null) {
+        return {
+            key: 'play-turn',
+            body: 'It is your turn to play a card or make a call.'
+        };
+    }
+
+    return null;
+};
+
 export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
     const location = useLocation();
@@ -37,17 +100,43 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
+    const tabInactiveRef = useRef(isBrowserTabInactive());
+    const transitionSnapshotRef = useRef<{ roomId: string | null; status: string | null; actionKey: string | null }>({
+        roomId: null,
+        status: null,
+        actionKey: null
+    });
 
     const [rulesOpen, setRulesOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
+    const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationPermission>(() => getBrowserNotificationPermission());
 
     const playerName = new URLSearchParams(location.search).get('name') || 'Player';
     const isCreating = new URLSearchParams(location.search).get('create') === '1';
+    const notificationsSupported = isBrowserNotificationSupported();
 
     // Auto-pick Team 1 for the room creator; others see team selection
     useEffect(() => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
+
+    useEffect(() => {
+        const syncBrowserAttentionState = () => {
+            tabInactiveRef.current = isBrowserTabInactive();
+            setNotificationPermission(getBrowserNotificationPermission());
+        };
+
+        syncBrowserAttentionState();
+        document.addEventListener('visibilitychange', syncBrowserAttentionState);
+        window.addEventListener('focus', syncBrowserAttentionState);
+        window.addEventListener('blur', syncBrowserAttentionState);
+
+        return () => {
+            document.removeEventListener('visibilitychange', syncBrowserAttentionState);
+            window.removeEventListener('focus', syncBrowserAttentionState);
+            window.removeEventListener('blur', syncBrowserAttentionState);
+        };
+    }, []);
 
     // Start listening before the user joins so we can render the team picker with live room data.
     useEffect(() => {
@@ -129,6 +218,68 @@ export const Room: React.FC = () => {
         socket.emit('joinRoom', roomId, playerName, teamPick);
     }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
 
+    useEffect(() => {
+        if (!gameState || !socket?.id) {
+            transitionSnapshotRef.current = {
+                roomId: null,
+                status: null,
+                actionKey: null
+            };
+            return;
+        }
+
+        const currentRoomId = gameState.roomId ?? roomId ?? null;
+        const currentAction = getActionRequirement(gameState, socket.id);
+        const previousSnapshot = transitionSnapshotRef.current;
+
+        // Reset transition detection when the user moves to another room or reconnects into a different state stream.
+        if (previousSnapshot.roomId !== currentRoomId) {
+            transitionSnapshotRef.current = {
+                roomId: currentRoomId,
+                status: gameState.status ?? null,
+                actionKey: currentAction?.key ?? null
+            };
+            return;
+        }
+
+        const isLocalPlayerSeated = gameState.players.some((player: any) => player.id === socket.id);
+        const gameJustStarted =
+            isLocalPlayerSeated &&
+            (previousSnapshot.status === 'waiting' || previousSnapshot.status === 'game_end') &&
+            gameState.status === 'playing';
+        const becameActionable =
+            isLocalPlayerSeated &&
+            previousSnapshot.actionKey === null &&
+            currentAction !== null;
+
+        if (gameJustStarted) {
+            sendBrowserNotification({
+                title: `Game started in room ${currentRoomId}`,
+                body: 'All seats are filled and the match is live.',
+                tag: `game-start:${currentRoomId}`
+            });
+        }
+
+        if (becameActionable && tabInactiveRef.current) {
+            sendBrowserNotification({
+                title: `Your action is needed in room ${currentRoomId}`,
+                body: currentAction.body,
+                tag: `turn:${currentRoomId}`
+            });
+        }
+
+        transitionSnapshotRef.current = {
+            roomId: currentRoomId,
+            status: gameState.status ?? null,
+            actionKey: currentAction?.key ?? null
+        };
+    }, [gameState, roomId, socket?.id]);
+
+    const requestNotifications = async () => {
+        const nextPermission = await requestBrowserNotificationPermission();
+        setNotificationPermission(nextPermission);
+    };
+
     const handleLeave = () => {
         if (socket && roomId && hasJoined.current) {
             // Tell the server to free our seat immediately instead of waiting for a disconnect.
@@ -167,6 +318,11 @@ export const Room: React.FC = () => {
         }
 
         setTeamPick(team);
+
+        // Ask at a moment that already comes from a user gesture so browsers accept the permission prompt.
+        if (getBrowserNotificationPermission() === 'default') {
+            void requestNotifications();
+        }
     };
 
     const previewPlayers = roomPreview?.players ?? [];
@@ -300,6 +456,26 @@ export const Room: React.FC = () => {
                     </button>
                 </div>
             </header>
+
+            {notificationsSupported && notificationPermission !== 'granted' && (
+                <div className={`notification-banner glass-panel ${notificationPermission === 'denied' ? 'blocked' : ''}`}>
+                    <div className="notification-banner-copy">
+                        <strong>
+                            {notificationPermission === 'denied'
+                                ? 'Browser notifications are blocked.'
+                                : 'Enable browser notifications.'}
+                        </strong>
+                        <span>
+                            Get alerts when the match starts and when you need to act from another tab.
+                        </span>
+                    </div>
+                    {notificationPermission === 'default' && (
+                        <button className="btn btn-primary" onClick={() => void requestNotifications()}>
+                            Enable Notifications
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Main Game Area */}
             <main className="game-area">
