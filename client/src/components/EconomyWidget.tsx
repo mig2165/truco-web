@@ -75,7 +75,7 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = ({ playerId, playerNa
             body: JSON.stringify({ playerId, displayName: playerName }),
         }).then(() => fetchProfile());
 
-        pollRef.current = setInterval(() => { void fetchProfile(); }, 10_000);
+        pollRef.current = setInterval(() => { void fetchProfile(); }, 30_000);
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };

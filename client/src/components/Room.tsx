@@ -88,6 +88,8 @@ const getActionRequirement = (state: any, currentPlayerId: string | undefined): 
     return null;
 };
 
+const MATCH_REWARD_TOAST_DURATION_MS = 5000;
+
 export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
     const location = useLocation();
@@ -176,7 +178,7 @@ export const Room: React.FC = () => {
                 if (data && !data.alreadyRecorded && data.transaction) {
                     setMatchReward({ amount: data.transaction.amount, isWinner });
                     // Auto-dismiss after 5 seconds.
-                    setTimeout(() => setMatchReward(null), 5000);
+                    setTimeout(() => setMatchReward(null), MATCH_REWARD_TOAST_DURATION_MS);
                 }
             })
             .catch(() => { /* silently ignore */ });
