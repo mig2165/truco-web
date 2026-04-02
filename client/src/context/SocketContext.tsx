@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getOrCreatePersistentPlayerId } from '../lib/playerIdentity';
+import { getApiBaseUrl } from '../lib/apiBaseUrl';
 
 interface SocketContextContextType {
     socket: Socket | null;
@@ -26,8 +27,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     useEffect(() => {
         // In dev (Vite on :5000), connect to the separate backend on :3001
         // In production / ngrok (served from Express), connect to same origin
-        const serverUrl = import.meta.env.VITE_API_URL
-            || (window.location.port === '5000' ? 'http://localhost:3001' : window.location.origin);
+        const serverUrl = getApiBaseUrl();
         const newSocket = io(serverUrl);
 
         newSocket.on('connect', () => {

@@ -9,6 +9,7 @@ import {
     sendBrowserNotification
 } from '../lib/browserNotifications';
 import type { BrowserNotificationPermission } from '../lib/browserNotifications';
+import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
@@ -90,7 +91,7 @@ export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
     const location = useLocation();
     const navigate = useNavigate();
-    const { socket } = useSocket();
+    const { socket, persistentPlayerId } = useSocket();
 
     const [gameState, setGameState] = useState<any>(null);
     const [roomPreview, setRoomPreview] = useState<RoomPreviewState | null>(null);
@@ -100,6 +101,7 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
+    const hasBootstrappedProfile = useRef(false);
     const tabInactiveRef = useRef(isBrowserTabInactive());
     const transitionSnapshotRef = useRef<{ roomId: string | null; status: string | null; actionKey: string | null }>({
         roomId: null,
@@ -119,6 +121,43 @@ export const Room: React.FC = () => {
     useEffect(() => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
+
+    useEffect(() => {
+        if (!persistentPlayerId || !playerName.trim() || hasBootstrappedProfile.current) {
+            return;
+        }
+
+        hasBootstrappedProfile.current = true;
+
+        const controller = new AbortController();
+        const serverUrl = getApiBaseUrl();
+
+        void fetch(`${serverUrl}/api/economy/profile`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                playerId: persistentPlayerId,
+                displayName: playerName.trim(),
+            }),
+            signal: controller.signal,
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error(`Profile bootstrap failed with status ${response.status}`);
+            }
+        }).catch((error: unknown) => {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                return;
+            }
+            console.error('[Economy] Failed to bootstrap player profile:', error);
+            hasBootstrappedProfile.current = false;
+        });
+
+        return () => {
+            controller.abort();
+        };
+    }, [persistentPlayerId, playerName]);
 
     useEffect(() => {
         const syncBrowserAttentionState = () => {
