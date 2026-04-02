@@ -161,12 +161,17 @@ export const Room: React.FC = () => {
 
         // Only apply reward once per match room.
         if (rewardedRoomId.current === roomId) return;
-        rewardedRoomId.current = roomId;
 
         const me = gameState.players.find((p: any) => p.id === socket?.id);
         if (!me) return; // spectators / bots don't get rewards
 
-        const isWinner = me.team === gameState.winnerTeam;
+        // winnerTeam is always 1 or 2 when status === 'game_end', but guard for safety.
+        if (gameState.winnerTeam == null) return;
+
+        // Lock the ref only after we confirm we have a real seated player to reward.
+        rewardedRoomId.current = roomId;
+
+        const isWinner = (me.team as number) === (gameState.winnerTeam as number);
 
         void fetch(`${getApiBaseUrl()}/api/economy/match-result`, {
             method: 'POST',
