@@ -8,6 +8,7 @@ import { bugReportManager, BugCategory, BugReport, GameSnapshot } from './bugRep
 import { reportDb, fixDb, prDb } from './database';
 import { bugFixer } from './bugFixer';
 import { gitIntegration } from './gitIntegration';
+import { economyService } from './economy';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -160,6 +161,79 @@ app.get('/admin', (_req, res) => {
 // Catch-all for React Router (client-side routes like /room/:id)
 app.get('/room/:id', (req, res) => {
   res.sendFile(path.join(clientBuildPath, 'index.html'));
+});
+
+// ── Economy API Endpoints ──────────────────────────────────────────────────────
+
+/**
+ * POST /api/economy/profile
+ * Body: { playerId: string, displayName: string }
+ * Get-or-create a player profile. Awards the starter Bucks grant exactly once.
+ * Safe to call on every reconnect — idempotent for existing profiles.
+ */
+app.post('/api/economy/profile', (req, res) => {
+  const { playerId, displayName } = req.body as { playerId?: unknown; displayName?: unknown };
+
+  if (!playerId || typeof playerId !== 'string' || playerId.trim() === '') {
+    res.status(400).json({ error: 'playerId must be a non-empty string' });
+    return;
+  }
+  if (!displayName || typeof displayName !== 'string' || displayName.trim() === '') {
+    res.status(400).json({ error: 'displayName must be a non-empty string' });
+    return;
+  }
+
+  try {
+    const profile = economyService.getOrCreateProfile(playerId.trim(), displayName.trim());
+    res.json(profile);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[Economy] getOrCreateProfile error:', message);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/economy/profile/:playerId
+ * Returns the profile for a given persistent player ID.
+ * 404 if the profile does not exist yet.
+ */
+app.get('/api/economy/profile/:playerId', (req, res) => {
+  const { playerId } = req.params;
+  if (!playerId || playerId.trim() === '') {
+    res.status(400).json({ error: 'playerId must be a non-empty string' });
+    return;
+  }
+
+  const profile = economyService.getProfile(playerId.trim());
+  if (!profile) {
+    res.status(404).json({ error: 'Profile not found' });
+    return;
+  }
+  res.json(profile);
+});
+
+/**
+ * GET /api/economy/profile/:playerId/transactions
+ * Returns the full transaction ledger for a player, sorted oldest-first.
+ * Returns an empty array (not 404) if the profile exists but has no transactions.
+ * Returns 404 if the profile does not exist.
+ */
+app.get('/api/economy/profile/:playerId/transactions', (req, res) => {
+  const { playerId } = req.params;
+  if (!playerId || playerId.trim() === '') {
+    res.status(400).json({ error: 'playerId must be a non-empty string' });
+    return;
+  }
+
+  const profile = economyService.getProfile(playerId.trim());
+  if (!profile) {
+    res.status(404).json({ error: 'Profile not found' });
+    return;
+  }
+
+  const transactions = economyService.getTransactions(playerId.trim());
+  res.json(transactions);
 });
 
 // ── Bugfix Pipeline API Endpoints ─────────────────────────────────────────────
