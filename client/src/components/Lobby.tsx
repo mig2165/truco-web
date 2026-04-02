@@ -3,6 +3,7 @@ import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
+import { EconomyWidget } from './EconomyWidget';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
@@ -27,7 +28,7 @@ type LobbySnapshot = {
 };
 
 export const Lobby: React.FC = () => {
-    const { socket, isConnected } = useSocket();
+    const { socket, isConnected, persistentPlayerId } = useSocket();
     const navigate = useNavigate();
     const [playerName, setPlayerName] = useState('');
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
@@ -142,6 +143,11 @@ export const Lobby: React.FC = () => {
                             <span>{lobbySnapshot.activeRooms.length} active rooms</span>
                         </div>
                     </div>
+                    {persistentPlayerId && playerName.trim() && (
+                        <div className="lobby-economy-row">
+                            <EconomyWidget playerId={persistentPlayerId} playerName={playerName.trim()} />
+                        </div>
+                    )}
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
                 </div>
 

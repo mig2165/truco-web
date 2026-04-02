@@ -13,6 +13,7 @@ const bugReport_1 = require("./bugReport");
 const database_1 = require("./database");
 const bugFixer_1 = require("./bugFixer");
 const gitIntegration_1 = require("./gitIntegration");
+const economy_1 = require("./economy");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
 // Logging middleware
@@ -139,6 +140,102 @@ app.get('/admin', (_req, res) => {
 // Catch-all for React Router (client-side routes like /room/:id)
 app.get('/room/:id', (req, res) => {
     res.sendFile(path_1.default.join(clientBuildPath, 'index.html'));
+});
+// ── Economy API Endpoints ──────────────────────────────────────────────────────
+/**
+ * POST /api/economy/profile
+ * Body: { playerId: string, displayName: string }
+ * Get-or-create a player profile. Awards the starter Bucks grant exactly once.
+ * Safe to call on every reconnect — idempotent for existing profiles.
+ */
+app.post('/api/economy/profile', (req, res) => {
+    const { playerId, displayName } = req.body;
+    if (!playerId || typeof playerId !== 'string' || playerId.trim() === '') {
+        res.status(400).json({ error: 'playerId must be a non-empty string' });
+        return;
+    }
+    if (!displayName || typeof displayName !== 'string' || displayName.trim() === '') {
+        res.status(400).json({ error: 'displayName must be a non-empty string' });
+        return;
+    }
+    try {
+        const profile = economy_1.economyService.getOrCreateProfile(playerId.trim(), displayName.trim());
+        res.json(profile);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[Economy] getOrCreateProfile error:', message);
+        res.status(500).json({ error: message });
+    }
+});
+/**
+ * GET /api/economy/profile/:playerId
+ * Returns the profile for a given persistent player ID.
+ * 404 if the profile does not exist yet.
+ */
+app.get('/api/economy/profile/:playerId', (req, res) => {
+    const { playerId } = req.params;
+    if (!playerId || playerId.trim() === '') {
+        res.status(400).json({ error: 'playerId must be a non-empty string' });
+        return;
+    }
+    const profile = economy_1.economyService.getProfile(playerId.trim());
+    if (!profile) {
+        res.status(404).json({ error: 'Profile not found' });
+        return;
+    }
+    res.json(profile);
+});
+/**
+ * GET /api/economy/profile/:playerId/transactions
+ * Returns the full transaction ledger for a player, sorted oldest-first.
+ * Returns an empty array (not 404) if the profile exists but has no transactions.
+ * Returns 404 if the profile does not exist.
+ */
+app.get('/api/economy/profile/:playerId/transactions', (req, res) => {
+    const { playerId } = req.params;
+    if (!playerId || playerId.trim() === '') {
+        res.status(400).json({ error: 'playerId must be a non-empty string' });
+        return;
+    }
+    const profile = economy_1.economyService.getProfile(playerId.trim());
+    if (!profile) {
+        res.status(404).json({ error: 'Profile not found' });
+        return;
+    }
+    const transactions = economy_1.economyService.getTransactions(playerId.trim());
+    res.json(transactions);
+});
+/**
+ * POST /api/economy/match-result
+ * Body: { playerId: string, roomId: string, isWinner: boolean }
+ * Records a post-match Bucks reward idempotently.
+ * Win: +50 Bucks. Participation (loss): +10 Bucks.
+ * A second call for the same playerId+roomId combination is a no-op.
+ */
+app.post('/api/economy/match-result', (req, res) => {
+    const { playerId, roomId, isWinner } = req.body;
+    if (!playerId || typeof playerId !== 'string' || playerId.trim() === '') {
+        res.status(400).json({ error: 'playerId must be a non-empty string' });
+        return;
+    }
+    if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+        res.status(400).json({ error: 'roomId must be a non-empty string' });
+        return;
+    }
+    if (typeof isWinner !== 'boolean') {
+        res.status(400).json({ error: 'isWinner must be a boolean' });
+        return;
+    }
+    try {
+        const result = economy_1.economyService.recordMatchResult(playerId.trim(), roomId.trim(), isWinner);
+        res.json(result);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[Economy] recordMatchResult error:', message);
+        res.status(500).json({ error: message });
+    }
 });
 // ── Bugfix Pipeline API Endpoints ─────────────────────────────────────────────
 app.get('/api/bugfix-dashboard', (_req, res) => {

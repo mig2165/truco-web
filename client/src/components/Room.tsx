@@ -9,12 +9,14 @@ import {
     sendBrowserNotification
 } from '../lib/browserNotifications';
 import type { BrowserNotificationPermission } from '../lib/browserNotifications';
+import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import './Room.css';
 import { GameTable } from './GameTable';
 import { ChatPanel } from './ChatPanel';
 import { RulesPanel } from './RulesPanel';
 import { DevPanel } from './DevPanel';
 import { ChangelogLauncher } from './ChangelogLauncher';
+import { EconomyWidget } from './EconomyWidget';
 
 type RoomPreviewPlayer = {
     id: string;
@@ -90,7 +92,7 @@ export const Room: React.FC = () => {
     const { roomId } = useParams<{ roomId: string }>();
     const location = useLocation();
     const navigate = useNavigate();
-    const { socket } = useSocket();
+    const { socket, persistentPlayerId } = useSocket();
 
     const [gameState, setGameState] = useState<any>(null);
     const [roomPreview, setRoomPreview] = useState<RoomPreviewState | null>(null);
@@ -100,6 +102,9 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
+    const hasBootstrappedProfile = useRef(false);
+    const rewardedRoomId = useRef<string | null>(null);
+    const [matchReward, setMatchReward] = useState<{ amount: number; isWinner: boolean } | null>(null);
     const tabInactiveRef = useRef(isBrowserTabInactive());
     const transitionSnapshotRef = useRef<{ roomId: string | null; status: string | null; actionKey: string | null }>({
         roomId: null,
@@ -119,6 +124,63 @@ export const Room: React.FC = () => {
     useEffect(() => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
+
+    // Bootstrap the economy profile once we have both a player name and stable ID.
+    useEffect(() => {
+        if (!persistentPlayerId || !playerName.trim() || hasBootstrappedProfile.current) {
+            return;
+        }
+
+        hasBootstrappedProfile.current = true;
+
+        const controller = new AbortController();
+        const serverUrl = getApiBaseUrl();
+
+        void fetch(`${serverUrl}/api/economy/profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playerId: persistentPlayerId,
+                displayName: playerName.trim(),
+            }),
+            signal: controller.signal,
+        }).catch((error: unknown) => {
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            console.error('[Economy] Failed to bootstrap player profile:', error);
+            hasBootstrappedProfile.current = false;
+        });
+
+        return () => { controller.abort(); };
+    }, [persistentPlayerId, playerName]);
+
+    // Post-match reward: fires once when the game ends, idempotent per roomId.
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'game_end' || !persistentPlayerId || !roomId) return;
+
+        // Only apply reward once per match room.
+        if (rewardedRoomId.current === roomId) return;
+        rewardedRoomId.current = roomId;
+
+        const me = gameState.players.find((p: any) => p.id === socket?.id);
+        if (!me) return; // spectators / bots don't get rewards
+
+        const isWinner = me.team === gameState.winnerTeam;
+
+        void fetch(`${getApiBaseUrl()}/api/economy/match-result`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playerId: persistentPlayerId, roomId, isWinner }),
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then((data: { alreadyRecorded: boolean; transaction: { amount: number } | null } | null) => {
+                if (data && !data.alreadyRecorded && data.transaction) {
+                    setMatchReward({ amount: data.transaction.amount, isWinner });
+                    // Auto-dismiss after 5 seconds.
+                    setTimeout(() => setMatchReward(null), 5000);
+                }
+            })
+            .catch(() => { /* silently ignore */ });
+    }, [gameState, persistentPlayerId, roomId, socket?.id]);
 
     useEffect(() => {
         const syncBrowserAttentionState = () => {
@@ -446,6 +508,9 @@ export const Room: React.FC = () => {
                     )}
                 </div>
                 <div className="header-right">
+                    {persistentPlayerId && (
+                        <EconomyWidget playerId={persistentPlayerId} playerName={playerName} />
+                    )}
                     <div className="points-badge">
                         <span className="team1">Team 1: {gameState.points.team1}</span>
                         <span className="divider">|</span>
@@ -474,6 +539,18 @@ export const Room: React.FC = () => {
                             Enable Notifications
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* Match reward toast */}
+            {matchReward && (
+                <div className="match-reward-toast" role="status">
+                    <span className="match-reward-toast__icon">{matchReward.isWinner ? '🏆' : '🎮'}</span>
+                    <span className="match-reward-toast__text">
+                        {matchReward.isWinner ? 'Victory!' : 'Good game!'}&nbsp;
+                        <strong>+{matchReward.amount} Bucks</strong> added to your wallet.
+                    </span>
+                    <button className="match-reward-toast__close" onClick={() => setMatchReward(null)}>✕</button>
                 </div>
             )}
 

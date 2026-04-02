@@ -415,3 +415,9 @@ input:focus {
         opacity: 1;
     }
 }
+
+.lobby-economy-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+}
