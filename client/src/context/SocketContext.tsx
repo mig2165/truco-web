@@ -1,14 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getOrCreatePersistentPlayerId } from '../lib/playerIdentity';
 
 interface SocketContextContextType {
     socket: Socket | null;
     isConnected: boolean;
+    /** Stable player ID persisted in localStorage across reconnects. */
+    persistentPlayerId: string;
 }
 
 const SocketContext = createContext<SocketContextContextType>({
     socket: null,
     isConnected: false,
+    persistentPlayerId: '',
 });
 
 export const useSocket = () => useContext(SocketContext);
@@ -16,6 +20,8 @@ export const useSocket = () => useContext(SocketContext);
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    // Resolved once on mount so it is stable for the lifetime of the provider.
+    const [persistentPlayerId] = useState<string>(() => getOrCreatePersistentPlayerId());
 
     useEffect(() => {
         // In dev (Vite on :5000), connect to the separate backend on :3001
@@ -42,7 +48,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }, []);
 
     return (
-        <SocketContext.Provider value={{ socket, isConnected }}>
+        <SocketContext.Provider value={{ socket, isConnected, persistentPlayerId }}>
             {children}
         </SocketContext.Provider>
     );
