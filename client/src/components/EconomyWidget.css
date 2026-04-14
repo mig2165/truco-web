@@ -1,0 +1,172 @@
+.economy-widget {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-family: inherit;
+    z-index: 100;
+}
+
+.economy-widget__balance {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    background: rgba(255, 215, 0, 0.15);
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    border-radius: 20px;
+    color: #ffd700;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.economy-widget__balance:hover {
+    background: rgba(255, 215, 0, 0.25);
+}
+
+.economy-widget__coin {
+    font-size: 1rem;
+}
+
+.economy-widget__amount {
+    font-size: 0.95rem;
+}
+
+.economy-widget__label {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+.economy-widget__chevron {
+    font-size: 0.6rem;
+    opacity: 0.7;
+    margin-left: 2px;
+}
+
+.economy-widget__ledger {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 320px;
+    max-height: 360px;
+    background: #1a1a2e;
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 200;
+}
+
+.economy-widget__ledger-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 215, 0, 0.08);
+    border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.economy-widget__stats {
+    display: flex;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: rgba(255, 215, 0, 0.8);
+}
+
+.economy-widget__close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.economy-widget__close:hover {
+    color: #fff;
+}
+
+.economy-widget__loading,
+.economy-widget__empty {
+    padding: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.8rem;
+}
+
+.economy-widget__tx-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.economy-widget__tx {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 1px 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.78rem;
+}
+
+.economy-widget__tx:last-child {
+    border-bottom: none;
+}
+
+.economy-widget__tx-type {
+    grid-column: 1;
+    grid-row: 1;
+    font-weight: 600;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.economy-widget__tx-desc {
+    grid-column: 2;
+    grid-row: 1;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.economy-widget__tx-amount {
+    grid-column: 3;
+    grid-row: 1;
+    font-weight: 700;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.economy-widget__tx--credit .economy-widget__tx-amount {
+    color: #4caf50;
+}
+
+.economy-widget__tx--debit .economy-widget__tx-amount {
+    color: #f44336;
+}
+
+.economy-widget__tx-balance {
+    grid-column: 2;
+    grid-row: 2;
+    color: rgba(255, 215, 0, 0.7);
+    font-size: 0.72rem;
+}
+
+.economy-widget__tx-date {
+    grid-column: 3;
+    grid-row: 2;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 0.7rem;
+    text-align: right;
+}
