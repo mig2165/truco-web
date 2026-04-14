@@ -106,7 +106,7 @@ export const Room: React.FC = () => {
     const [joinedRoom, setJoinedRoom] = useState(false);
     const [copied, setCopied] = useState(false);
     const hasJoined = useRef(false);
-    const hasBootstrappedProfile = useRef(false);
+
     const rewardedRoomId = useRef<string | null>(null);
     const [matchReward, setMatchReward] = useState<{ amount: number; isWinner: boolean } | null>(null);
     const tabInactiveRef = useRef(isBrowserTabInactive());
