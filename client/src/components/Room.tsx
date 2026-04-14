@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { Users, Info, Copy, BookOpen } from 'lucide-react';
 import {
     getBrowserNotificationPermission,
@@ -95,6 +96,7 @@ export const Room: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { socket, persistentPlayerId } = useSocket();
+    const { user, isLoading } = useAuth();
 
     const [gameState, setGameState] = useState<any>(null);
     const [roomPreview, setRoomPreview] = useState<RoomPreviewState | null>(null);
@@ -127,34 +129,6 @@ export const Room: React.FC = () => {
         if (isCreating) setTeamPick(1);
     }, [isCreating]);
 
-    // Bootstrap the economy profile once we have both a player name and stable ID.
-    useEffect(() => {
-        if (!persistentPlayerId || !playerName.trim() || hasBootstrappedProfile.current) {
-            return;
-        }
-
-        hasBootstrappedProfile.current = true;
-
-        const controller = new AbortController();
-        const serverUrl = getApiBaseUrl();
-
-        void fetch(`${serverUrl}/api/economy/profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                playerId: persistentPlayerId,
-                displayName: playerName.trim(),
-            }),
-            signal: controller.signal,
-        }).catch((error: unknown) => {
-            if (error instanceof DOMException && error.name === 'AbortError') return;
-            console.error('[Economy] Failed to bootstrap player profile:', error);
-            hasBootstrappedProfile.current = false;
-        });
-
-        return () => { controller.abort(); };
-    }, [persistentPlayerId, playerName]);
-
     // Post-match reward: fires once when the game ends, idempotent per roomId.
     useEffect(() => {
         if (!gameState || gameState.status !== 'game_end' || !persistentPlayerId || !roomId) return;
@@ -176,6 +150,7 @@ export const Room: React.FC = () => {
         void fetch(`${getApiBaseUrl()}/api/economy/match-result`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ playerId: persistentPlayerId, roomId, isWinner }),
         })
             .then(r => r.ok ? r.json() : null)
@@ -515,8 +490,8 @@ export const Room: React.FC = () => {
                     )}
                 </div>
                 <div className="header-right">
-                    {persistentPlayerId && (
-                        <EconomyWidget playerId={persistentPlayerId} playerName={playerName} />
+                    {user && !isLoading && (
+                        <EconomyWidget playerId={user.id} playerName={user.displayName} />
                     )}
                     <div className="points-badge">
                         <span className="team1">Team 1: {gameState.points.team1}</span>

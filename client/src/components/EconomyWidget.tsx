@@ -33,10 +33,9 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = ({ playerId, playerNa
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const fetchProfile = useCallback(async () => {
-        if (!playerId) return;
         try {
             const base = getApiBaseUrl();
-            const res = await fetch(`${base}/api/economy/profile/${playerId}`);
+            const res = await fetch(`${base}/api/economy/profile`, { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json() as PlayerProfile;
                 setProfile(data);
@@ -44,14 +43,13 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = ({ playerId, playerNa
         } catch {
             // silently ignore network errors
         }
-    }, [playerId]);
+    }, []);
 
     const fetchTransactions = useCallback(async () => {
-        if (!playerId) return;
         setLoading(true);
         try {
             const base = getApiBaseUrl();
-            const res = await fetch(`${base}/api/economy/profile/${playerId}/transactions`);
+            const res = await fetch(`${base}/api/economy/transactions`, { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json() as BucksTransaction[];
                 setTransactions(data.slice().reverse()); // newest first
@@ -61,25 +59,16 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = ({ playerId, playerNa
         } finally {
             setLoading(false);
         }
-    }, [playerId]);
+    }, []);
 
     // Bootstrap profile on mount and poll for balance updates.
     useEffect(() => {
-        if (!playerId || !playerName) return;
-
-        // Create profile if it doesn't exist yet.
-        const base = getApiBaseUrl();
-        void fetch(`${base}/api/economy/profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ playerId, displayName: playerName }),
-        }).then(() => fetchProfile());
-
+        void fetchProfile();
         pollRef.current = setInterval(() => { void fetchProfile(); }, 30_000);
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };
-    }, [playerId, playerName, fetchProfile]);
+    }, [fetchProfile]);
 
     const handleToggleLedger = () => {
         if (!showLedger) {

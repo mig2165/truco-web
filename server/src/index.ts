@@ -2,16 +2,20 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
+import jwt from 'jsonwebtoken';
 import { TrucoGameManager } from './gameManager';
 import { bugReportManager, BugCategory, BugReport, GameSnapshot } from './bugReport';
 import { reportDb, fixDb, prDb } from './database';
 import { bugFixer } from './bugFixer';
 import { gitIntegration } from './gitIntegration';
 import { economyService } from './economy';
+import { authService } from './auth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-secure-enough-for-local';
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -19,14 +23,17 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+// Use origin: true and credentials: true to allow cookies across ports
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: '*',
+    origin: true,
     methods: ['GET', 'POST'],
+    credentials: true
   },
 });
 
@@ -163,108 +170,139 @@ app.get('/room/:id', (req, res) => {
   res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
 
-// ── Economy API Endpoints ──────────────────────────────────────────────────────
+// ── Auth & Identity Endpoints ──────────────────────────────────────────────────
 
-/**
- * POST /api/economy/profile
- * Body: { playerId: string, displayName: string }
- * Get-or-create a player profile. Awards the starter Bucks grant exactly once.
- * Safe to call on every reconnect — idempotent for existing profiles.
- */
-app.post('/api/economy/profile', (req, res) => {
-  const { playerId, displayName } = req.body as { playerId?: unknown; displayName?: unknown };
+function setAuthCookie(res: express.Response, accountId: string) {
+  const token = jwt.sign({ id: accountId }, JWT_SECRET, { expiresIn: '30d' });
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Support cross-origin local dev
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+}
 
-  if (!playerId || typeof playerId !== 'string' || playerId.trim() === '') {
-    res.status(400).json({ error: 'playerId must be a non-empty string' });
-    return;
-  }
-  if (!displayName || typeof displayName !== 'string' || displayName.trim() === '') {
-    res.status(400).json({ error: 'displayName must be a non-empty string' });
-    return;
-  }
-
+function getAuthAccount(req: express.Request) {
+  const token = req.cookies.token;
+  if (!token) return null;
   try {
-    const profile = economyService.getOrCreateProfile(playerId.trim(), displayName.trim());
-    res.json(profile);
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    return authService.getAccount(decoded.id) || null;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[Economy] getOrCreateProfile error:', message);
-    res.status(500).json({ error: message });
+    return null;
+  }
+}
+
+app.post('/api/auth/register', (req, res) => {
+  const { username, displayName, password } = req.body;
+  if (!username || !displayName || !password) {
+    res.status(400).json({ error: 'Missing required fields' });
+    return;
+  }
+  try {
+    const account = authService.register(username, displayName, password);
+    // Initialize their economy profile instantly
+    economyService.getOrCreateProfile(account.id, account.displayName);
+    setAuthCookie(res, account.id);
+    res.json({ id: account.id, username: account.username, displayName: account.displayName });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
   }
 });
 
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    res.status(400).json({ error: 'Missing required fields' });
+    return;
+  }
+  const account = authService.verifyCredentials(username, password);
+  if (!account) {
+    res.status(401).json({ error: 'Invalid username or password' });
+    return;
+  }
+  setAuthCookie(res, account.id);
+  res.json({ id: account.id, username: account.username, displayName: account.displayName });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
+  res.json({ success: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  res.json({ id: account.id, username: account.username, displayName: account.displayName });
+});
+
+// ── Economy API Endpoints ──────────────────────────────────────────────────────
+
 /**
- * GET /api/economy/profile/:playerId
- * Returns the profile for a given persistent player ID.
- * 404 if the profile does not exist yet.
+ * GET /api/economy/profile
+ * Returns the profile for the currently authenticated user.
  */
-app.get('/api/economy/profile/:playerId', (req, res) => {
-  const { playerId } = req.params;
-  if (!playerId || playerId.trim() === '') {
-    res.status(400).json({ error: 'playerId must be a non-empty string' });
+app.get('/api/economy/profile', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
     return;
   }
 
-  const profile = economyService.getProfile(playerId.trim());
-  if (!profile) {
-    res.status(404).json({ error: 'Profile not found' });
-    return;
-  }
+  // Ensure they have a profile created
+  const profile = economyService.getOrCreateProfile(account.id, account.displayName);
   res.json(profile);
 });
 
 /**
- * GET /api/economy/profile/:playerId/transactions
- * Returns the full transaction ledger for a player, sorted oldest-first.
- * Returns an empty array (not 404) if the profile exists but has no transactions.
- * Returns 404 if the profile does not exist.
+ * GET /api/economy/transactions
+ * Returns the full transaction ledger for the currently authenticated user.
  */
-app.get('/api/economy/profile/:playerId/transactions', (req, res) => {
-  const { playerId } = req.params;
-  if (!playerId || playerId.trim() === '') {
-    res.status(400).json({ error: 'playerId must be a non-empty string' });
+app.get('/api/economy/transactions', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
     return;
   }
 
-  const profile = economyService.getProfile(playerId.trim());
-  if (!profile) {
-    res.status(404).json({ error: 'Profile not found' });
-    return;
-  }
-
-  const transactions = economyService.getTransactions(playerId.trim());
+  const transactions = economyService.getTransactions(account.id);
   res.json(transactions);
 });
 
 /**
  * POST /api/economy/match-result
  * Body: { playerId: string, roomId: string, isWinner: boolean }
- * Records a post-match Bucks reward idempotently.
- * Win: +50 Bucks. Participation (loss): +10 Bucks.
- * A second call for the same playerId+roomId combination is a no-op.
+ * Records a post-match Bucks reward idempotently, checking if playerId relates to a real account.
  */
 app.post('/api/economy/match-result', (req, res) => {
   const { playerId, roomId, isWinner } = req.body as {
-    playerId?: unknown;
-    roomId?: unknown;
-    isWinner?: unknown;
+    playerId?: string;
+    roomId?: string;
+    isWinner?: boolean;
   };
 
-  if (!playerId || typeof playerId !== 'string' || playerId.trim() === '') {
-    res.status(400).json({ error: 'playerId must be a non-empty string' });
+  if (!playerId || !roomId || typeof isWinner !== 'boolean') {
+    res.status(400).json({ error: 'Missing required fields' });
     return;
   }
-  if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
-    res.status(400).json({ error: 'roomId must be a non-empty string' });
-    return;
-  }
-  if (typeof isWinner !== 'boolean') {
-    res.status(400).json({ error: 'isWinner must be a boolean' });
+
+  // Allow guests to play continuously, but quietly skip match rewards so they don't get 400 errors or accumulate invisible bucks
+  const account = authService.getAccount(playerId);
+  if (!account) {
+    // Player is a guest, harmlessly return
+    res.json({ notice: 'match recorded server-side, but player is a guest so Bucks skipped' });
     return;
   }
 
   try {
-    const result = economyService.recordMatchResult(playerId.trim(), roomId.trim(), isWinner);
+    const result = economyService.recordMatchResult(account.id, roomId, isWinner);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

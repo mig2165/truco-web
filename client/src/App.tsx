@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Lobby } from './components/Lobby';
 import { Room } from './components/Room';
@@ -10,8 +11,9 @@ function App() {
   const [teacherModeEnabled, setTeacherModeEnabled] = useState(false);
 
   return (
-    <SocketProvider>
-      <div className="app-shell">
+    <AuthProvider>
+      <SocketProvider>
+        <div className="app-shell">
         <Router>
           <Routes>
             <Route path="/" element={<Lobby />} />
@@ -48,7 +50,8 @@ function App() {
           </span>
         </button>
       </div>
-    </SocketProvider>
+      </SocketProvider>
+    </AuthProvider>
   );
 }
 

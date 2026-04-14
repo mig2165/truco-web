@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
 import { EconomyWidget } from './EconomyWidget';
+import { AuthUI } from './AuthUI';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
@@ -28,7 +30,8 @@ type LobbySnapshot = {
 };
 
 export const Lobby: React.FC = () => {
-    const { socket, isConnected, persistentPlayerId } = useSocket();
+    const { socket, isConnected } = useSocket();
+    const { user, isLoading } = useAuth();
     const navigate = useNavigate();
     const [playerName, setPlayerName] = useState('');
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
@@ -43,6 +46,14 @@ export const Lobby: React.FC = () => {
     const isDevQueryEnabled = searchParams.get('dev') === '1';
     const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
     const devRoomsAvailable = isDevQueryEnabled && (import.meta.env.DEV || isLocalHost || import.meta.env.VITE_ENABLE_DEV_ROOMS === 'true');
+
+    useEffect(() => {
+        if (user) {
+            setPlayerName(user.displayName);
+        } else {
+            setPlayerName('');
+        }
+    }, [user]);
 
     useEffect(() => {
         const rootElement = document.getElementById('root');
@@ -143,9 +154,9 @@ export const Lobby: React.FC = () => {
                             <span>{lobbySnapshot.activeRooms.length} active rooms</span>
                         </div>
                     </div>
-                    {persistentPlayerId && playerName.trim() && (
+                    {user && !isLoading && (
                         <div className="lobby-economy-row">
-                            <EconomyWidget playerId={persistentPlayerId} playerName={playerName.trim()} />
+                            <EconomyWidget playerId={user.id} playerName={user.displayName} />
                         </div>
                     )}
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
@@ -154,16 +165,7 @@ export const Lobby: React.FC = () => {
                 <div className="lobby-forms">
                     {error && <div className="error-message">{error}</div>}
 
-                    <div className="input-group">
-                        <label>Your Name</label>
-                        <input
-                            type="text"
-                            placeholder="e.g. Joao"
-                            value={playerName}
-                            onChange={(e) => setPlayerName(e.target.value)}
-                            maxLength={15}
-                        />
-                    </div>
+                    <AuthUI onGuestNameChange={setPlayerName} />
 
                     <div className="actions-divider">
                         <button
