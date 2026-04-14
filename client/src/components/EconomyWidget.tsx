@@ -25,7 +25,8 @@ interface EconomyWidgetProps {
     playerName: string;
 }
 
-export const EconomyWidget: React.FC<EconomyWidgetProps> = ({ playerId, playerName }) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
     const [profile, setProfile] = useState<PlayerProfile | null>(null);
     const [transactions, setTransactions] = useState<BucksTransaction[]>([]);
     const [showLedger, setShowLedger] = useState(false);
