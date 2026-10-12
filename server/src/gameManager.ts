@@ -241,6 +241,16 @@ export class TrucoGameManager {
 
         const team1Count = state.players.filter((player) => player.team === 1).length;
         const team2Count = state.players.filter((player) => player.team === 2).length;
+        if (state.mode === 'duel' && state.hostPlayerId) {
+            const expectedTeam = state.hostPlayerId === socket.id ? 1 : 2;
+            if (chosenTeam !== expectedTeam) {
+                socket.emit('error', expectedTeam === 1
+                    ? 'The room creator must take Team 1.'
+                    : 'The room creator is Team 1. Join Team 2 to start the duel.');
+                return;
+            }
+        }
+
         // Keep team selection explicit so the UI can behave like a true seat picker.
         if (chosenTeam === 1 && team1Count >= (state.mode === 'duel' ? 1 : 2)) {
             socket.emit('error', 'Team 1 is full.');

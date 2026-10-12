@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
     {
         version: '0.0.1',
-        date: '8th of October',
-        title: '⚔️ ONLINE 1V1 DUELS (8th of October)',
+        date: '12th of October',
+        title: '⚔️ ONLINE 1V1 DUELS (12th of October)',
         sections: [
             {
                 title: '✨ New features',
