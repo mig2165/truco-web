@@ -29,6 +29,7 @@ type RoomPreviewPlayer = {
 type RoomPreviewState = {
     roomId: string;
     status: string;
+    mode: 'standard' | 'duel';
     dev?: { enabled?: boolean };
     players: RoomPreviewPlayer[];
 };
@@ -191,6 +192,7 @@ export const Room: React.FC = () => {
             setRoomPreview({
                 roomId: state.roomId,
                 status: state.status,
+                mode: state.mode ?? 'standard',
                 dev: state.dev,
                 players: state.players.map((player: any) => ({
                     id: player.id,
@@ -252,7 +254,8 @@ export const Room: React.FC = () => {
     useEffect(() => {
         if (!socket || !roomId || !teamPick || joinInFlight || joinedRoom || hasJoined.current) return;
 
-        if ((roomPreview?.players.length ?? 0) >= 4) {
+        const capacity = roomPreview?.mode === 'duel' ? 2 : 4;
+        if ((roomPreview?.players.length ?? 0) >= capacity) {
             window.alert('Game full!');
             navigate('/');
             return;
@@ -370,11 +373,14 @@ export const Room: React.FC = () => {
     };
 
     const previewPlayers = roomPreview?.players ?? [];
+    const isDuelRoom = roomPreview?.mode === 'duel' || gameState?.mode === 'duel';
+    const roomCapacity = isDuelRoom ? 2 : 4;
     const team1PreviewPlayers = previewPlayers.filter((player) => player.team === 1);
     const team2PreviewPlayers = previewPlayers.filter((player) => player.team === 2);
-    const roomIsFull = previewPlayers.length >= 4;
-    const team1IsFull = team1PreviewPlayers.length >= 2;
-    const team2IsFull = team2PreviewPlayers.length >= 2;
+    const roomIsFull = previewPlayers.length >= roomCapacity;
+    const teamCapacity = isDuelRoom ? 1 : 2;
+    const team1IsFull = team1PreviewPlayers.length >= teamCapacity;
+    const team2IsFull = team2PreviewPlayers.length >= teamCapacity;
 
     const renderPickerSlots = (players: RoomPreviewPlayer[], team: 1 | 2) => (
         <>
@@ -407,11 +413,24 @@ export const Room: React.FC = () => {
         return (
             <div className="room-container center">
                 <div className="team-picker glass-panel">
-                    <h2>Pick Your Team</h2>
+                    <h2>{roomPreview?.mode === 'duel' ? 'Join 1v1 Duel' : 'Pick Your Team'}</h2>
                     <p className="subtitle">Room: <strong>{roomId}</strong></p>
                     <p className={`team-picker-status ${roomIsFull ? 'full' : ''}`}>
-                        {roomIsFull ? 'Game full!' : `${previewPlayers.length}/4 players seated. Click a team to join.`}
+                        {roomIsFull
+                            ? 'Game full!'
+                            : roomPreview?.mode === 'duel'
+                                ? `${previewPlayers.length}/2 players seated. Join Team 2 for a five-card, best-of-five duel.`
+                                : `${previewPlayers.length}/4 players seated. Click a team to join.`}
                     </p>
+                    {roomPreview?.mode === 'duel' ? (
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => handleTeamSelection(2)}
+                            disabled={joinInFlight || roomIsFull}
+                        >
+                            {roomIsFull ? 'Duel is full' : 'Join as the opponent'}
+                        </button>
+                    ) : (
                     <div className="team-pick-grid">
                         <button
                             className="team-seat-card team-1-card"
@@ -447,7 +466,8 @@ export const Room: React.FC = () => {
                             </span>
                         </button>
                     </div>
-                    {roomIsFull && <p className="team-picker-warning">All four seats are already taken.</p>}
+                    )}
+                    {roomIsFull && <p className="team-picker-warning">{isDuelRoom ? 'Both duel seats are taken.' : 'All four seats are already taken.'}</p>}
                     <ChangelogLauncher
                         className="btn changelog-update-btn team-picker-changelog-btn"
                         label="UPDATE! View changelog"
@@ -484,9 +504,13 @@ export const Room: React.FC = () => {
                 </div>
                 <div className="header-center">
                     {isWaiting ? (
-                        <h2>{isDevRoom ? 'Preparing dev room...' : `Waiting for players... (${gameState.players.length}/4)`}</h2>
+                        <h2>{isDevRoom
+                            ? 'Preparing dev room...'
+                            : isDuelRoom
+                                ? `Waiting for opponent... (${gameState.players.length}/2)`
+                                : `Waiting for players... (${gameState.players.length}/4)`}</h2>
                     ) : (
-                        <h2>Truco</h2>
+                        <h2>{isDuelRoom ? '1v1 Duel' : 'Truco'}</h2>
                     )}
                 </div>
                 <div className="header-right">
@@ -494,9 +518,9 @@ export const Room: React.FC = () => {
                         <EconomyWidget playerId={user.id} playerName={user.displayName} />
                     )}
                     <div className="points-badge">
-                        <span className="team1">Team 1: {gameState.points.team1}</span>
+                        <span className="team1">{isDuelRoom ? `T1 hands: ${gameState.points.team1}/3` : `Team 1: ${gameState.points.team1}`}</span>
                         <span className="divider">|</span>
-                        <span className="team2">Team 2: {gameState.points.team2}</span>
+                        <span className="team2">{isDuelRoom ? `T2 hands: ${gameState.points.team2}/3` : `Team 2: ${gameState.points.team2}`}</span>
                     </div>
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />
@@ -543,7 +567,7 @@ export const Room: React.FC = () => {
                         {isWaiting ? (
                             <div className="waiting-lobby glass-panel">
                                 <Users size={48} className="lobby-icon" />
-                                <h3>Players ({gameState.players.length}/4)</h3>
+                                <h3>{isDuelRoom ? 'Duel players' : 'Players'} ({gameState.players.length}/{roomCapacity})</h3>
 
                                 <div className="teams-grid">
                                     <div className="team-col team-1-col">
@@ -554,7 +578,7 @@ export const Room: React.FC = () => {
                                                 {p.name} {p.id === socket?.id ? '(You)' : ''}
                                             </div>
                                         ))}
-                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
+                                        {Array.from({ length: Math.max(0, (isDuelRoom ? 1 : 2) - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
                                             <div key={i} className="player-pill empty">Open slot...</div>
                                         ))}
                                     </div>
@@ -567,18 +591,21 @@ export const Room: React.FC = () => {
                                                 {p.name} {p.id === socket?.id ? '(You)' : ''}
                                             </div>
                                         ))}
-                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
+                                        {Array.from({ length: Math.max(0, (isDuelRoom ? 1 : 2) - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
                                             <div key={i} className="player-pill empty">Open slot...</div>
                                         ))}
                                     </div>
                                 </div>
 
                                 <div className="room-invite">
-                                    <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
+                                    <p>{isDevRoom ? 'Debug room code:' : isDuelRoom ? 'Share this code with your opponent:' : 'Share this code with your friends:'}</p>
                                     <div className="invite-code" onClick={copyCode}>
                                         {roomId} {copied ? '✓' : <Copy size={14} />}
                                     </div>
                                 </div>
+                                {isDuelRoom && (
+                                    <p className="hint">Five cards each. First to win 3 hands takes the best-of-five duel.</p>
+                                )}
 
                                 <ChangelogLauncher
                                     className="btn changelog-update-btn waiting-lobby-changelog-btn"
@@ -588,7 +615,7 @@ export const Room: React.FC = () => {
                                 {isDevRoom ? (
                                     <p className="hint">Server bots are being seated and the round will auto-start.</p>
                                 ) : (
-                                    <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
+                                    <p className="hint">Need {roomCapacity - gameState.players.length} more {isDuelRoom ? 'opponent' : 'player(s)'}...</p>
                                 )}
                             </div>
                         ) : (
@@ -622,7 +649,7 @@ export const Room: React.FC = () => {
             </main>
 
             {/* Rules Panel */}
-            {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
+            {rulesOpen && <RulesPanel mode={isDuelRoom ? 'duel' : 'standard'} onClose={() => setRulesOpen(false)} />}
         </div>
     );
 };

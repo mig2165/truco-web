@@ -6,6 +6,8 @@ import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp } from 'luc
 import { ChangelogLauncher } from './ChangelogLauncher';
 import { EconomyWidget } from './EconomyWidget';
 import { AuthUI } from './AuthUI';
+import { FriendsPanel } from './FriendsPanel';
+import { MatchHistoryPanel } from './MatchHistoryPanel';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
@@ -16,6 +18,7 @@ type LobbyRoomPlayer = {
 
 type LobbyRoom = {
     roomId: string;
+    mode: 'standard' | 'duel';
     status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';
     hostPlayerName: string | null;
     isDevRoom: boolean;
@@ -99,8 +102,20 @@ export const Lobby: React.FC = () => {
             return;
         }
         if (socket) {
-            socket.emit('createRoom', playerName, (roomId: string) => {
-                navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1`);
+            socket.emit('createRoom', { playerName, mode: 'standard' }, (roomId: string) => {
+                if (roomId) navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1`);
+            });
+        }
+    };
+
+    const handleCreateDuelRoom = () => {
+        if (!playerName.trim()) {
+            setError('Please enter your name first');
+            return;
+        }
+        if (socket) {
+            socket.emit('createRoom', { playerName, mode: 'duel' }, (roomId: string) => {
+                if (roomId) navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1`);
             });
         }
     };
@@ -167,6 +182,13 @@ export const Lobby: React.FC = () => {
 
                     <AuthUI onGuestNameChange={setPlayerName} />
 
+                    {user && !isLoading && (
+                        <>
+                            <FriendsPanel user={user} socket={socket} />
+                            <MatchHistoryPanel user={user} />
+                        </>
+                    )}
+
                     <div className="actions-divider">
                         <button
                             className="btn btn-primary"
@@ -174,6 +196,13 @@ export const Lobby: React.FC = () => {
                             disabled={!isConnected}
                         >
                             <Play size={20} /> Create New Game
+                        </button>
+                        <button
+                            className="btn btn-secondary duel-create-btn"
+                            onClick={handleCreateDuelRoom}
+                            disabled={!isConnected}
+                        >
+                            <Users size={20} /> Create 1v1 Duel
                         </button>
                     </div>
 
@@ -222,12 +251,13 @@ export const Lobby: React.FC = () => {
                                                     <div>
                                                         <div className="room-summary-title-row">
                                                             <h3>{room.roomId}</h3>
+                                                            {room.mode === 'duel' && <span className="room-duel-badge">1v1</span>}
                                                             {room.isDevRoom && <span className="room-dev-badge">DEV</span>}
                                                         </div>
                                                         <p className="room-summary-meta">{describeRoomStatus(room)}</p>
                                                     </div>
                                                     <div className="room-summary-count">
-                                                        <span>{room.seatedPlayers}/4 seated</span>
+                                                        <span>{room.seatedPlayers}/{room.mode === 'duel' ? 2 : 4} seated</span>
                                                         {room.openSeats > 0 && <small>{room.openSeats} open</small>}
                                                     </div>
                                                 </div>

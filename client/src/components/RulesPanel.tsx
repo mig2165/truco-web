@@ -4,35 +4,56 @@ import './RulesPanel.css';
 
 interface RulesPanelProps {
     onClose: () => void;
+    mode?: 'standard' | 'duel';
 }
 
-export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
+export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose, mode = 'standard' }) => {
+    const isDuelMode = mode === 'duel';
+
     return (
         <div className="rules-overlay" onClick={onClose}>
             <div className="rules-panel glass-panel" onClick={e => e.stopPropagation()}>
                 <button className="rules-close" onClick={onClose}><X size={20} /></button>
-                <h2 className="rules-title">📖 Truco Rules</h2>
+                <h2 className="rules-title">📖 {isDuelMode ? '1v1 Duel Rules' : 'Truco Rules'}</h2>
 
                 <div className="rules-content">
                     <section className="rules-section">
                         <h3>🃏 The Basics</h3>
-                        <ul>
-                            <li><strong>4 players</strong> in 2 teams (Team 1 vs Team 2)</li>
-                            <li>Each player gets <strong>3 cards</strong> per round</li>
-                            <li>No 8s, 9s, or 10s in the deck</li>
-                            <li><strong>11 points</strong> starts the endgame, not an automatic win</li>
-                        </ul>
+                        {isDuelMode ? (
+                            <ul>
+                                <li><strong>2 players</strong> face off, one on each team</li>
+                                <li>Each player gets <strong>5 cards</strong> per hand</li>
+                                <li>The match is best of five hands: first to win <strong>3 hands</strong> wins</li>
+                                <li>No 8s, 9s, or 10s in the deck</li>
+                            </ul>
+                        ) : (
+                            <ul>
+                                <li><strong>4 players</strong> in 2 teams (Team 1 vs Team 2)</li>
+                                <li>Each player gets <strong>3 cards</strong> per round</li>
+                                <li>No 8s, 9s, or 10s in the deck</li>
+                                <li><strong>11 points</strong> starts the endgame, not an automatic win</li>
+                            </ul>
+                        )}
                     </section>
 
                     <section className="rules-section">
                         <h3>🏆 Tricks</h3>
-                        <ul>
-                            <li>Each round has up to <strong>3 tricks</strong></li>
-                            <li>All 4 players play 1 card per trick</li>
-                            <li>The <strong>highest card</strong> wins the trick</li>
-                            <li>First team to win <strong>2 tricks</strong> wins the round</li>
-                            <li>If all 4 cards tie, no one wins the trick</li>
-                        </ul>
+                        {isDuelMode ? (
+                            <ul>
+                                <li>Each hand has up to <strong>5 tricks</strong>; each player plays one card per trick</li>
+                                <li>The <strong>highest card</strong> wins the trick</li>
+                                <li>First player to win <strong>3 tricks</strong> takes the hand</li>
+                                <li>If both cards tie, no one wins that trick</li>
+                            </ul>
+                        ) : (
+                            <ul>
+                                <li>Each round has up to <strong>3 tricks</strong></li>
+                                <li>All 4 players play 1 card per trick</li>
+                                <li>The <strong>highest card</strong> wins the trick</li>
+                                <li>First team to win <strong>2 tricks</strong> wins the round</li>
+                                <li>If all 4 cards tie, no one wins the trick</li>
+                            </ul>
+                        )}
                     </section>
 
                     <section className="rules-section">
@@ -54,43 +75,63 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
 
                     <section className="rules-section">
                         <h3>👊 Truco Escalation</h3>
-                        <ul>
-                            <li>After trick 1, any player can call <strong>TRUCO</strong> (round worth 3 pts)</li>
-                            <li>The opposing team can:
+                        {isDuelMode ? (
+                            <ul>
+                                <li>After trick 1, either player can call <strong>TRUCO</strong> to raise the hand's stakes</li>
+                                <li>The opponent can accept or fold; folding awards the hand to the caller</li>
+                                <li>Accepted calls can be raised to <strong>DOUBLE</strong> and <strong>TRIPLE</strong> as usual</li>
+                                <li>Regardless of raises, each hand win counts as one toward the first-to-3 match score</li>
+                            </ul>
+                        ) : (
+                            <ul>
+                                <li>After trick 1, any player can call <strong>TRUCO</strong> (round worth 3 pts)</li>
+                                <li>The opposing team can:
                                 <ul>
                                     <li><strong>Accept</strong> — play continues at higher stakes</li>
                                     <li><strong>Fold</strong> — the calling team wins the round (1 pt)</li>
                                 </ul>
-                            </li>
-                            <li>After accepting Truco, the <strong>opposing</strong> team can call <strong>DOUBLE</strong> (6 pts)</li>
-                            <li>Then the other team can call <strong>TRIPLE</strong> (9 pts)</li>
-                            <li>The same team <strong>cannot</strong> escalate twice in a row</li>
-                            <li>Truco, Double, and Triple are <strong>not allowed</strong> during <strong>Mão de Onze</strong> or <strong>Mão de Ferro</strong></li>
-                        </ul>
+                                </li>
+                                <li>After accepting Truco, the <strong>opposing</strong> team can call <strong>DOUBLE</strong> (6 pts)</li>
+                                <li>Then the other team can call <strong>TRIPLE</strong> (9 pts)</li>
+                                <li>The same team <strong>cannot</strong> escalate twice in a row</li>
+                                <li>Truco, Double, and Triple are <strong>not allowed</strong> during <strong>Mão de Onze</strong> or <strong>Mão de Ferro</strong></li>
+                            </ul>
+                        )}
                     </section>
 
-                    <section className="rules-section">
-                        <h3>🏁 Endgame Rules</h3>
-                        <ul>
-                            <li>Normal scoring is <strong>hard capped at 11</strong></li>
-                            <li>If a team reaches <strong>11</strong>, the next hand becomes <strong>Mão de Onze</strong></li>
-                            <li>If both teams are at <strong>11-11</strong>, the next hand is <strong>Mão de Ferro</strong></li>
-                            <li>Example: at <strong>10-10</strong>, winning a Truco hand still only moves the winner to <strong>11</strong>; they must still survive <strong>Mão de Onze</strong> to finish the game</li>
-                        </ul>
-                        <h4>Mão de Onze</h4>
-                        <ul>
-                            <li>The team on <strong>11</strong> can <strong>Play</strong> or <strong>Run</strong></li>
-                            <li>If they <strong>Run</strong>, the opponents gain <strong>1 point</strong></li>
-                            <li>If they <strong>Play</strong> and win, they can finally go past <strong>11</strong> and win the game</li>
-                            <li>If they <strong>Play</strong> and lose, the opponents get the special hand payout and the score resolves from there</li>
-                        </ul>
-                        <h4>Mão de Ferro</h4>
-                        <ul>
-                            <li>At <strong>11-11</strong>, all cards stay hidden</li>
-                            <li>No one can call <strong>Truco</strong></li>
-                            <li>The winner of the hand wins the game directly</li>
-                        </ul>
-                    </section>
+                    {isDuelMode ? (
+                        <section className="rules-section">
+                            <h3>🏁 Duel Match</h3>
+                            <ul>
+                                <li>The scoreboard tracks hands won; the first player to <strong>3</strong> wins the match</li>
+                                <li>Truco calls still decide the hand, but do not add extra match wins</li>
+                                <li>Mão de Onze and Mão de Ferro do not apply in the short duel match</li>
+                            </ul>
+                        </section>
+                    ) : (
+                        <section className="rules-section">
+                            <h3>🏁 Endgame Rules</h3>
+                            <ul>
+                                <li>Normal scoring is <strong>hard capped at 11</strong></li>
+                                <li>If a team reaches <strong>11</strong>, the next hand becomes <strong>Mão de Onze</strong></li>
+                                <li>If both teams are at <strong>11-11</strong>, the next hand is <strong>Mão de Ferro</strong></li>
+                                <li>Example: at <strong>10-10</strong>, winning a Truco hand still only moves the winner to <strong>11</strong>; they must still survive <strong>Mão de Onze</strong> to finish the game</li>
+                            </ul>
+                            <h4>Mão de Onze</h4>
+                            <ul>
+                                <li>The team on <strong>11</strong> can <strong>Play</strong> or <strong>Run</strong></li>
+                                <li>If they <strong>Run</strong>, the opponents gain <strong>1 point</strong></li>
+                                <li>If they <strong>Play</strong> and win, they can finally go past <strong>11</strong> and win the game</li>
+                                <li>If they <strong>Play</strong> and lose, the opponents get the special hand payout and the score resolves from there</li>
+                            </ul>
+                            <h4>Mão de Ferro</h4>
+                            <ul>
+                                <li>At <strong>11-11</strong>, all cards stay hidden</li>
+                                <li>No one can call <strong>Truco</strong></li>
+                                <li>The winner of the hand wins the game directly</li>
+                            </ul>
+                        </section>
+                    )}
 
                     <section className="rules-section">
                         <h3>🤚 Mão Baixa / Mão Real</h3>
@@ -117,13 +158,17 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose }) => {
 
                     <section className="rules-section">
                         <h3>📊 Points Summary</h3>
-                        <ul>
-                            <li>Normal round win: <strong>1 point</strong></li>
-                            <li>Truco win: <strong>3 points</strong></li>
-                            <li>Double win: <strong>6 points</strong></li>
-                            <li>Triple win: <strong>9 points</strong></li>
-                            <li>Normal scoring stops at <strong>11</strong>; only a resolved <strong>Mão de Onze</strong> can push a team beyond that</li>
-                        </ul>
+                        {isDuelMode ? (
+                            <p>Each hand won adds one match win. The score stops at 3, so a duel lasts at most five hands.</p>
+                        ) : (
+                            <ul>
+                                <li>Normal round win: <strong>1 point</strong></li>
+                                <li>Truco win: <strong>3 points</strong></li>
+                                <li>Double win: <strong>6 points</strong></li>
+                                <li>Triple win: <strong>9 points</strong></li>
+                                <li>Normal scoring stops at <strong>11</strong>; only a resolved <strong>Mão de Onze</strong> can push a team beyond that</li>
+                            </ul>
+                        )}
                     </section>
                 </div>
             </div>

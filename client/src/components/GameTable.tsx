@@ -136,6 +136,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
     const secretDebugAvailable = Boolean(gameState.secretDebug?.available);
     const secretDebugActive = Boolean(gameState.secretDebug?.active);
+    const isDuelMode = gameState.mode === 'duel';
     const allPlayersReady = gameState.players.every((p: any) => p.maoBaixaReady);
 
     const sendDebugCommand = (command: DebugCommand) => {
@@ -217,15 +218,16 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
     const getRelativePlayer = (offset: number) => {
         const myIndex = gameState.players.findIndex((p: any) => p.id === currentPlayerId);
-        if (myIndex === -1) return undefined;
-        const targetIndex = (myIndex + offset) % 4;
+        const playerCount = gameState.players.length;
+        if (myIndex === -1 || playerCount === 0) return undefined;
+        const targetIndex = (myIndex + offset) % playerCount;
         return gameState.players[targetIndex];
     };
 
     const me = getRelativePlayer(0);
-    const rightPlayer = getRelativePlayer(1);
-    const topPlayer = getRelativePlayer(2);   // Partner
-    const leftPlayer = getRelativePlayer(3);
+    const rightPlayer = isDuelMode ? undefined : getRelativePlayer(1);
+    const topPlayer = getRelativePlayer(isDuelMode ? 1 : 2);   // Opponent in duels, partner in team games
+    const leftPlayer = isDuelMode ? undefined : getRelativePlayer(3);
 
     const isMyTurn = gameState.players[gameState.currentTurnIndex]?.id === currentPlayerId;
     const tricksPlayed = gameState.tricks.team1 + gameState.tricks.team2;
@@ -235,8 +237,8 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const canCallTriple = !endgameHandActive && gameState.roundPoints === 6 && gameState.callState.lastCallTeam !== me?.team;
     const canCallMao = tricksPlayed === 0 && !gameState.callState.type && !me?.maoBaixaReady;
     const winningTeamLabel = (gameState.winnerTeam === 1 || (gameState.winnerTeam == null && gameState.points.team1 > gameState.points.team2))
-        ? '🔵 Team 1 wins the GAME!'
-        : '🔴 Team 2 wins the GAME!';
+        ? `🔵 Team 1 wins the ${isDuelMode ? 'DUEL' : 'GAME'}!`
+        : `🔴 Team 2 wins the ${isDuelMode ? 'DUEL' : 'GAME'}!`;
     const roundWinnerTeam = gameState.winnerTeam
         ?? (gameState.tricks.team1 > gameState.tricks.team2 ? 1 : gameState.tricks.team2 > gameState.tricks.team1 ? 2 : null);
 
@@ -374,9 +376,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             </div>
                         </div>
                         <div className="menu-score">
-                            <span>Team 1: <strong>{gameState.points.team1}</strong></span>
+                            <span>{isDuelMode ? 'Team 1 hands:' : 'Team 1:'} <strong>{gameState.points.team1}{isDuelMode ? '/3' : ''}</strong></span>
                             <span>vs</span>
-                            <span>Team 2: <strong>{gameState.points.team2}</strong></span>
+                            <span>{isDuelMode ? 'Team 2 hands:' : 'Team 2:'} <strong>{gameState.points.team2}{isDuelMode ? '/3' : ''}</strong></span>
                         </div>
                         {secretDebugAvailable && !secretDebugActive && (
                             <section className="secret-debug-section">
@@ -552,16 +554,21 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     {gameState.status === 'round_end' && (
                         <div className="round-result">
                             {roundWinnerTeam === 1
-                                ? '🔵 Team 1 wins the round!'
+                                ? `🔵 Team 1 wins this ${isDuelMode ? 'hand' : 'round'}!`
                                 : roundWinnerTeam === 2
-                                    ? '🔴 Team 2 wins the round!'
+                                    ? `🔴 Team 2 wins this ${isDuelMode ? 'hand' : 'round'}!`
                                     : 'Round ended.'}
+                            {isDuelMode && (
+                                <div className="game-end-subtitle">Duel hands: {gameState.points.team1}–{gameState.points.team2} · first to 3</div>
+                            )}
                         </div>
                     )}
                     {gameState.status === 'game_end' && (
                         <div className="round-result game-end">
                             <div className="game-end-title">{winningTeamLabel}</div>
-                            <div className="game-end-subtitle">Anyone can start a rematch with the same teams.</div>
+                            <div className="game-end-subtitle">{isDuelMode
+                                ? 'Best of five hands · first to 3 wins. Anyone can start a rematch.'
+                                : 'Anyone can start a rematch with the same teams.'}</div>
                             <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
                                 Start Rematch
                             </button>

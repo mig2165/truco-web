@@ -12,6 +12,7 @@ import { bugFixer } from './bugFixer';
 import { gitIntegration } from './gitIntegration';
 import { economyService } from './economy';
 import { authService } from './auth';
+import { socialService } from './social';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -49,7 +50,20 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
 
-const gameManager = new TrucoGameManager(io);
+const socketAccounts = new Map<string, string>();
+function emitToAccount(accountId: string, event: string, payload?: unknown) {
+  for (const [socketId, connectedAccountId] of socketAccounts) {
+    if (connectedAccountId === accountId) io.to(socketId).emit(event, payload);
+  }
+}
+
+function isAccountOnline(accountId: string) {
+  return Array.from(socketAccounts.values()).includes(accountId);
+}
+
+const gameManager = new TrucoGameManager(io, (state) => {
+  socialService.recordCompletedMatch(state, socketAccounts, Date.now());
+});
 
 // ── REST API Endpoints ─────────────────────────────────────────────────────────
 
@@ -241,6 +255,134 @@ app.get('/api/auth/me', (req, res) => {
     return;
   }
   res.json({ id: account.id, username: account.username, displayName: account.displayName });
+});
+
+// ── Friends & Match History ────────────────────────────────────────────────────
+
+app.get('/api/social/search', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  const relations = socialService.getRelations(account.id);
+  const excludedIds = new Set([
+    account.id,
+    ...relations.flatMap(relation => [relation.requesterId, relation.recipientId]),
+  ]);
+  res.json(socialService.searchAccounts(authService.accountDb.getAll(), String(req.query.q ?? ''), excludedIds));
+});
+
+app.get('/api/social/friends', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  const onlineIds = new Set(socketAccounts.values());
+  res.json(socialService.getFriends(account.id).flatMap(id => {
+    const friend = authService.getAccount(id);
+    return friend ? [{ id, username: friend.username, displayName: friend.displayName, online: onlineIds.has(id) }] : [];
+  }));
+});
+
+app.get('/api/social/requests', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  res.json(socialService.getIncomingRequests(account.id).flatMap(request => {
+    const sender = authService.getAccount(request.requesterId);
+    return sender ? [{ id: request.id, username: sender.username, displayName: sender.displayName, createdAt: request.createdAt }] : [];
+  }));
+});
+
+app.post('/api/social/requests', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+  if (!username) {
+    res.status(400).json({ error: 'Enter a username.' });
+    return;
+  }
+  const recipient = authService.getAccountByUsername(username);
+  if (!recipient) {
+    res.status(404).json({ error: 'No account found with that username.' });
+    return;
+  }
+  try {
+    const relation = socialService.sendRequest(account.id, recipient.id);
+    emitToAccount(recipient.id, 'friendRequestUpdated');
+    emitToAccount(account.id, 'friendRequestUpdated');
+    if (relation.status === 'accepted') {
+      emitFriendPresence(account.id, isAccountOnline(account.id));
+      emitFriendPresence(recipient.id, isAccountOnline(recipient.id));
+    }
+    res.json({ success: true, status: relation.status });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not send friend request.' });
+  }
+});
+
+app.post('/api/social/requests/:requestId/accept', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  try {
+    const request = socialService.respondToRequest(account.id, req.params.requestId, true);
+    emitToAccount(request.requesterId, 'friendRequestUpdated');
+    emitToAccount(account.id, 'friendRequestUpdated');
+    emitFriendPresence(account.id, isAccountOnline(account.id));
+    emitFriendPresence(request.requesterId, isAccountOnline(request.requesterId));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : 'Friend request not found.' });
+  }
+});
+
+app.delete('/api/social/requests/:requestId', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  try {
+    const request = socialService.respondToRequest(account.id, req.params.requestId, false);
+    emitToAccount(request.requesterId, 'friendRequestUpdated');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : 'Friend request not found.' });
+  }
+});
+
+app.delete('/api/social/friends/:friendId', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  if (!socialService.removeFriend(account.id, req.params.friendId)) {
+    res.status(404).json({ error: 'Friend not found.' });
+    return;
+  }
+  emitToAccount(account.id, 'friendRequestUpdated');
+  emitToAccount(req.params.friendId, 'friendRequestUpdated');
+  res.json({ success: true });
+});
+
+app.get('/api/matches', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+  res.json(socialService.getMatchHistory(account.id));
 });
 
 // ── Economy API Endpoints ──────────────────────────────────────────────────────
@@ -482,11 +624,74 @@ function buildTimeline(
 
 // ── Socket.io ──────────────────────────────────────────────────────────────────
 
+io.use((socket, next) => {
+  const cookieHeader = socket.handshake.headers.cookie ?? '';
+  const tokenCookie = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith('token='));
+  if (tokenCookie) {
+    try {
+      const token = decodeURIComponent(tokenCookie.slice('token='.length));
+      const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+      if (authService.getAccount(decoded.id)) socket.data.accountId = decoded.id;
+    } catch {
+      // An invalid or expired cookie simply connects the visitor as a guest.
+    }
+  }
+  next();
+});
+
+function emitFriendPresence(accountId: string, online: boolean) {
+  for (const friendId of socialService.getFriends(accountId)) {
+    for (const [socketId, connectedAccountId] of socketAccounts) {
+      if (connectedAccountId === friendId) {
+        io.to(socketId).emit('friendPresence', { accountId, online });
+      }
+    }
+  }
+}
+
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
+  const accountId = socket.data.accountId as string | undefined;
+  if (accountId) {
+    const wasOnline = Array.from(socketAccounts.values()).includes(accountId);
+    socketAccounts.set(socket.id, accountId);
+    if (!wasOnline) emitFriendPresence(accountId, true);
+  }
   gameManager.handleConnection(socket);
   // Keep the shared lobby presence counter in sync for all connected clients.
   gameManager.broadcastLobbySnapshot();
+
+  socket.on('inviteFriend', (data: { friendId?: string; roomId?: string }) => {
+    const inviterId = socket.data.accountId as string | undefined;
+    if (!inviterId || !data?.friendId || !data.roomId ||
+      !socialService.getFriends(inviterId).includes(data.friendId)) {
+      socket.emit('socialError', 'Sign in and add this player as a friend before inviting them.');
+      return;
+    }
+    const room = gameManager.getGameState(data.roomId);
+    const inviter = authService.getAccount(inviterId);
+    if (!room || !inviter) {
+      socket.emit('socialError', 'That game room is no longer available.');
+      return;
+    }
+    const recipients = Array.from(socketAccounts.entries())
+      .filter(([, connectedAccountId]) => connectedAccountId === data.friendId)
+      .map(([socketId]) => socketId);
+    if (recipients.length === 0) {
+      socket.emit('socialError', 'That friend is currently offline.');
+      return;
+    }
+    recipients.forEach(socketId => io.to(socketId).emit('friendInvite', {
+      roomId: room.roomId,
+      inviterName: inviter.displayName,
+    }));
+  });
+
+  socket.on('disconnect', () => {
+    if (!accountId) return;
+    socketAccounts.delete(socket.id);
+    if (!Array.from(socketAccounts.values()).includes(accountId)) emitFriendPresence(accountId, false);
+  });
 
   // Chat — broadcast to all players in the room
   socket.on('chatMessage', (roomId: string, msg: { sender: string; message: string; team: number }) => {

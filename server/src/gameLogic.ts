@@ -1,5 +1,6 @@
 export type Suit = 'diamonds' | 'spades' | 'hearts' | 'clubs';
 export type Rank = '4' | '5' | '6' | '7' | 'Q' | 'J' | 'K' | 'A' | '2' | '3';
+export type GameMode = 'standard' | 'duel';
 
 export interface Card {
     suit: Suit;
@@ -37,6 +38,8 @@ export type DevState = {
 
 export interface GameState {
     roomId: string;
+    mode: GameMode;
+    duelRoundScored?: boolean;
     hostPlayerId: string | null;
     hostPlayerName: string | null;
     players: Player[];

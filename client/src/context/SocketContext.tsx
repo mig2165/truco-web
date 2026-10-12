@@ -19,7 +19,7 @@ const SocketContext = createContext<SocketContextContextType>({
 export const useSocket = () => useContext(SocketContext);
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { playerId, isLoading } = useAuth();
+    const { playerId, isLoading, user } = useAuth();
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
 
@@ -48,7 +48,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return () => {
             newSocket.close();
         };
-    }, [isLoading]);
+    }, [isLoading, user?.id]);
 
     return (
         <SocketContext.Provider value={{ socket, isConnected, persistentPlayerId: playerId }}>

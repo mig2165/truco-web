@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Lobby } from './components/Lobby';
 import { Room } from './components/Room';
+import { FriendInviteListener } from './components/FriendInviteListener';
 import teacherModeDoc from './assets/teacher-mode-doc.svg';
 import './App.css';
 
@@ -15,6 +16,7 @@ function App() {
       <SocketProvider>
         <div className="app-shell">
         <Router>
+          <FriendInviteListener />
           <Routes>
             <Route path="/" element={<Lobby />} />
             <Route path="/room/:roomId" element={<Room />} />

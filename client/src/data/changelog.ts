@@ -16,6 +16,22 @@ export interface ChangelogEntry {
 // Use sections to keep features and fixes grouped in the UI.
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.0.1',
+        date: '8th of October',
+        title: '⚔️ ONLINE 1V1 DUELS (8th of October)',
+        sections: [
+            {
+                title: '✨ New features',
+                items: [
+                    'Create a private 1v1 room and share its code with one opponent.',
+                    'Duel hands deal 5 cards per player and play up to 5 tricks; the first to 3 tricks wins the hand.',
+                    'Matches are best of five hands: the first player to win 3 hands takes the duel.',
+                    'Truco calls and card-ranking rules remain available in duels.',
+                ],
+            },
+        ],
+    },
+    {
         version: '0.0.0',
         date: '16th of March',
         title: '🚀 FRESH FEATURES AND BUG FIXES (16th of March) by Jin',
