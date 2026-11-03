@@ -37,6 +37,9 @@ export type DevState = {
 
 export interface GameState {
     roomId: string;
+    mode: 'classic' | 'duel';
+    duelCardCount?: 3 | 5;
+    matchWins: { team1: number; team2: number };
     hostPlayerId: string | null;
     hostPlayerName: string | null;
     players: Player[];

@@ -66,7 +66,54 @@
     font-size: 1.4rem;
     font-weight: 800;
     color: white;
+    margin-bottom: 1rem;
+}
+
+.rules-mode-tabs {
+    display: flex;
+    gap: 0.5rem;
     margin-bottom: 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rules-mode-tab {
+    flex: 1;
+    padding: 0.55rem 0.8rem;
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rules-mode-tab:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.rules-mode-tab.active {
+    color: #0f172a;
+    background: #fbbf24;
+    box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+}
+
+.rules-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 4px;
+    margin-left: 6px;
+    text-transform: uppercase;
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .rules-content {

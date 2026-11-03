@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp, BookOpen, Swords } from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
 import { EconomyWidget } from './EconomyWidget';
 import { AuthUI } from './AuthUI';
+import { RulesPanel } from './RulesPanel';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
@@ -19,6 +20,8 @@ type LobbyRoom = {
     status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';
     hostPlayerName: string | null;
     isDevRoom: boolean;
+    mode: 'classic' | 'duel';
+    duelCardCount?: 3 | 5;
     seatedPlayers: number;
     openSeats: number;
     players: LobbyRoomPlayer[];
@@ -34,10 +37,14 @@ export const Lobby: React.FC = () => {
     const { user, isLoading } = useAuth();
     const navigate = useNavigate();
     const [playerName, setPlayerName] = useState('');
+    const [selectedMode, setSelectedMode] = useState<'duel' | 'classic'>('duel');
+    const [duelCardCount, setDuelCardCount] = useState<3 | 5>(3);
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
     const [devSeed, setDevSeed] = useState('');
+    const [devRoomMode, setDevRoomMode] = useState<'duel' | 'classic'>('duel');
     const [error, setError] = useState('');
     const [showActiveRooms, setShowActiveRooms] = useState(false);
+    const [rulesOpen, setRulesOpen] = useState(false);
     const [lobbySnapshot, setLobbySnapshot] = useState<LobbySnapshot>({
         onlinePlayers: 0,
         activeRooms: []
@@ -93,14 +100,18 @@ export const Lobby: React.FC = () => {
         return room.seatedPlayers === 0 ? 'Reserved room' : 'Waiting for players';
     };
 
-    const handleCreateRoom = () => {
+    const handleCreateRoom = (modeToCreate: 'duel' | 'classic' = selectedMode) => {
         if (!playerName.trim()) {
-            setError('Please enter your name first');
+            setError('Please enter your name or sign in first');
             return;
         }
         if (socket) {
-            socket.emit('createRoom', playerName, (roomId: string) => {
-                navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1`);
+            socket.emit('createRoom', {
+                playerName,
+                mode: modeToCreate,
+                duelCardCount: modeToCreate === 'duel' ? duelCardCount : undefined
+            }, (roomId: string) => {
+                navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&mode=${modeToCreate}${modeToCreate === 'duel' ? `&cards=${duelCardCount}` : ''}`);
             });
         }
     };
@@ -126,6 +137,8 @@ export const Lobby: React.FC = () => {
         socket.emit('createRoom', {
             playerName,
             devMode: true,
+            mode: devRoomMode,
+            duelCardCount: devRoomMode === 'duel' ? duelCardCount : undefined,
             seed: devSeed.trim() || undefined
         }, (roomId: string) => {
             if (!roomId) {
@@ -133,7 +146,7 @@ export const Lobby: React.FC = () => {
                 return;
             }
 
-            navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&dev=1`);
+            navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&dev=1&mode=${devRoomMode}${devRoomMode === 'duel' ? `&cards=${duelCardCount}` : ''}`);
         });
     };
 
@@ -143,7 +156,7 @@ export const Lobby: React.FC = () => {
                 <div className="lobby-header">
                     <Spade className="logo-icon" size={48} />
                     <h1>Truco Online</h1>
-                    <p className="subtitle">Mão Baixa, Truco, and Manilhas</p>
+                    <p className="subtitle">1v1 Duel & 2v2 Classic • Mão Baixa, Truco, and Manilhas</p>
                     <div className="lobby-stats" aria-live="polite">
                         <div className="lobby-stat-pill">
                             <Radio size={14} />
@@ -159,30 +172,111 @@ export const Lobby: React.FC = () => {
                             <EconomyWidget playerId={user.id} playerName={user.displayName} />
                         </div>
                     )}
+                    <button
+                        type="button"
+                        className="btn btn-secondary rules-lobby-btn"
+                        onClick={() => setRulesOpen(true)}
+                        title="View Truco Rules"
+                    >
+                        <BookOpen size={16} /> View Game Rules (1v1 & 2v2)
+                    </button>
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
                 </div>
 
                 <div className="lobby-forms">
                     {error && <div className="error-message">{error}</div>}
 
+                    {/* Guest or Account Sign-in */}
                     <AuthUI onGuestNameChange={setPlayerName} />
+
+                    {/* Mode Selector */}
+                    <div className="mode-selector">
+                        <label className="mode-selector-label">Choose Game Mode</label>
+                        <div className="mode-cards-grid">
+                            <div
+                                className={`mode-card ${selectedMode === 'duel' ? 'selected' : ''}`}
+                                onClick={() => setSelectedMode('duel')}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedMode('duel'); }}
+                            >
+                                <div className="mode-card-header">
+                                    <span className="mode-card-title">
+                                        <Swords size={18} /> 1v1 Duel
+                                    </span>
+                                    <span className="mode-card-badge">Invite 1 Friend</span>
+                                </div>
+                                <p className="mode-card-desc">
+                                    Head-to-head match • {duelCardCount} cards per hand • Best of {duelCardCount} tricks • First to win 3 hands takes the match!
+                                </p>
+                            </div>
+
+                            <div
+                                className={`mode-card ${selectedMode === 'classic' ? 'selected' : ''}`}
+                                onClick={() => setSelectedMode('classic')}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedMode('classic'); }}
+                            >
+                                <div className="mode-card-header">
+                                    <span className="mode-card-title">
+                                        <Users size={18} /> 2v2 Classic
+                                    </span>
+                                    <span className="mode-card-badge badge-classic">Invite 3 Friends</span>
+                                </div>
+                                <p className="mode-card-desc">
+                                    Traditional 4-player team Truco • 3 cards per hand • First team to reach 12 points wins!
+                                </p>
+                            </div>
+                        </div>
+
+                        {selectedMode === 'duel' && (
+                            <div className="duel-variant-selector">
+                                <span className="duel-variant-label">1v1 Hand Size:</span>
+                                <div className="duel-variant-buttons">
+                                    <button
+                                        type="button"
+                                        className={`duel-variant-btn ${duelCardCount === 3 ? 'active' : ''}`}
+                                        onClick={() => setDuelCardCount(3)}
+                                    >
+                                        🃏 3 Cards (Fast • Best of 3 Tricks)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`duel-variant-btn ${duelCardCount === 5 ? 'active' : ''}`}
+                                        onClick={() => setDuelCardCount(5)}
+                                    >
+                                        🖐️ 5 Cards (Classic • Best of 5 Tricks)
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="actions-divider">
                         <button
                             className="btn btn-primary"
-                            onClick={handleCreateRoom}
+                            onClick={() => handleCreateRoom(selectedMode)}
                             disabled={!isConnected}
                         >
-                            <Play size={20} /> Create New Game
+                            {selectedMode === 'duel' ? (
+                                <>
+                                    <Swords size={20} /> Create 1v1 ({duelCardCount} Cards) Duel (Invite 1 friend)
+                                </>
+                            ) : (
+                                <>
+                                    <Users size={20} /> Create 2v2 Game (Invite 3 friends)
+                                </>
+                            )}
                         </button>
                     </div>
 
                     <div className="join-section">
-                        <p className="or-divider"><span>OR</span></p>
+                        <p className="or-divider"><span>OR JOIN WITH CODE</span></p>
                         <div className="input-group join-group">
                             <input
                                 type="text"
-                                placeholder="Room Code"
+                                placeholder="Room Code (e.g. AB12CD)"
                                 value={roomIdToJoin}
                                 onChange={(e) => setRoomIdToJoin(e.target.value.toUpperCase())}
                                 maxLength={6}
@@ -192,7 +286,7 @@ export const Lobby: React.FC = () => {
                                 onClick={handleJoinRoom}
                                 disabled={!isConnected}
                             >
-                                <Users size={20} /> Join Game
+                                <Play size={20} /> Join Game
                             </button>
                         </div>
                     </div>
@@ -222,12 +316,15 @@ export const Lobby: React.FC = () => {
                                                     <div>
                                                         <div className="room-summary-title-row">
                                                             <h3>{room.roomId}</h3>
+                                                            <span className={`room-mode-badge ${room.mode === 'duel' ? 'mode-duel' : 'mode-classic'}`}>
+                                                                {room.mode === 'duel' ? `1v1 Duel (${room.duelCardCount ?? 3} cards)` : '2v2 Classic'}
+                                                            </span>
                                                             {room.isDevRoom && <span className="room-dev-badge">DEV</span>}
                                                         </div>
                                                         <p className="room-summary-meta">{describeRoomStatus(room)}</p>
                                                     </div>
                                                     <div className="room-summary-count">
-                                                        <span>{room.seatedPlayers}/4 seated</span>
+                                                        <span>{room.seatedPlayers}/{room.mode === 'duel' ? 2 : 4} seated</span>
                                                         {room.openSeats > 0 && <small>{room.openSeats} open</small>}
                                                     </div>
                                                 </div>
@@ -278,8 +375,24 @@ export const Lobby: React.FC = () => {
                                 <span className="dev-card-badge">?dev=1</span>
                             </div>
                             <p className="dev-card-copy">
-                                Launch a seeded solo room and auto-fill the other three seats with server bots.
+                                Launch a seeded solo room and auto-fill remaining seat(s) with server bots (1 bot for 1v1 Duel, 3 bots for 2v2 Classic).
                             </p>
+                            <div className="dev-mode-select">
+                                <button
+                                    type="button"
+                                    className={`dev-mode-btn ${devRoomMode === 'duel' ? 'active' : ''}`}
+                                    onClick={() => setDevRoomMode('duel')}
+                                >
+                                    ⚔️ 1v1 Duel (1 Bot)
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`dev-mode-btn ${devRoomMode === 'classic' ? 'active' : ''}`}
+                                    onClick={() => setDevRoomMode('classic')}
+                                >
+                                    👥 2v2 Classic (3 Bots)
+                                </button>
+                            </div>
                             <div className="input-group">
                                 <label>Optional Seed</label>
                                 <input
@@ -295,7 +408,7 @@ export const Lobby: React.FC = () => {
                                 onClick={handleCreateDevRoom}
                                 disabled={!isConnected}
                             >
-                                <Bug size={18} /> Create Solo Dev Room
+                                <Bug size={18} /> Create Solo Dev Room ({devRoomMode === 'duel' ? '1v1' : '2v2'})
                             </button>
                         </div>
                     )}
@@ -306,6 +419,14 @@ export const Lobby: React.FC = () => {
                     />
                 </div>
             </div>
+
+            {/* Rules Modal in Lobby */}
+            {rulesOpen && (
+                <RulesPanel
+                    onClose={() => setRulesOpen(false)}
+                    mode={selectedMode}
+                />
+            )}
         </div>
     );
 };

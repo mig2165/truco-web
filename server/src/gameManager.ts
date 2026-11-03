@@ -17,7 +17,7 @@ import {
 } from './gameLogic';
 import { bugReportManager } from './bugReport';
 
-type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string };
+type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string; mode?: 'classic' | 'duel'; duelCardCount?: 3 | 5 };
 type ScheduledTask = ReturnType<typeof setTimeout>;
 
 type LobbyRoomPlayerSnapshot = {
@@ -31,6 +31,8 @@ type LobbyRoomSnapshot = {
     status: GameState['status'];
     hostPlayerName: string | null;
     isDevRoom: boolean;
+    mode: 'classic' | 'duel';
+    duelCardCount?: 3 | 5;
     seatedPlayers: number;
     openSeats: number;
     players: LobbyRoomPlayerSnapshot[];
@@ -51,6 +53,7 @@ const DEFAULT_BOT_SPEED_MS = 600;
 const MAX_DEV_LOG_ENTRIES = 30;
 const ENDGAME_ENTRY_SCORE = 11;
 const GAME_WIN_SCORE = 12;
+const DUEL_HANDS_TO_WIN = 3;
 const DEFAULT_SECRET_DEBUG_CODE = 'truco-local-debug';
 
 export class TrucoGameManager {
@@ -112,7 +115,12 @@ export class TrucoGameManager {
             return;
         }
 
-        const state = this.createEmptyState(roomId, normalized.devMode ? this.normalizeSeed(normalized.seed) : undefined);
+        const state = this.createEmptyState(
+            roomId,
+            normalized.devMode ? this.normalizeSeed(normalized.seed) : undefined,
+            normalized.mode,
+            normalized.duelCardCount
+        );
         state.hostPlayerId = socket.id;
         state.hostPlayerName = normalized.playerName;
         this.rooms.set(roomId, state);
@@ -131,20 +139,46 @@ export class TrucoGameManager {
             return {
                 playerName: payload,
                 devMode: false,
-                seed: undefined
+                seed: undefined,
+                mode: 'classic' as const,
+                duelCardCount: undefined
             };
         }
+
+        const isDuel = payload.mode === 'duel';
+        const cardCount = payload.duelCardCount === 3 ? 3 : 5;
 
         return {
             playerName: payload.playerName ?? 'Player',
             devMode: Boolean(payload.devMode),
-            seed: payload.seed?.trim()
+            seed: payload.seed?.trim(),
+            mode: isDuel ? ('duel' as const) : ('classic' as const),
+            duelCardCount: (isDuel ? cardCount : undefined) as 3 | 5 | undefined
         };
     }
 
-    private createEmptyState(roomId: string, devSeed?: string): GameState {
+    private roomCapacity(state: GameState) {
+        return state.mode === 'duel' ? 2 : 4;
+    }
+
+    private cardsPerHand(state: GameState) {
+        if (state.mode === 'duel') {
+            return state.duelCardCount === 3 ? 3 : 5;
+        }
+        return 3;
+    }
+
+    private createEmptyState(
+        roomId: string,
+        devSeed?: string,
+        mode: 'classic' | 'duel' = 'classic',
+        duelCardCount?: 3 | 5
+    ): GameState {
         return {
             roomId,
+            mode,
+            duelCardCount: mode === 'duel' ? (duelCardCount === 3 ? 3 : 5) : undefined,
+            matchWins: { team1: 0, team2: 0 },
             hostPlayerId: null,
             hostPlayerName: null,
             players: [],
@@ -220,21 +254,25 @@ export class TrucoGameManager {
             return;
         }
 
-        if (state.players.length >= 4) {
+        const capacity = this.roomCapacity(state);
+        if (state.players.length >= capacity) {
             socket.emit('error', 'Game full!');
             return;
         }
 
         const team1Count = state.players.filter((player) => player.team === 1).length;
         const team2Count = state.players.filter((player) => player.team === 2).length;
+        if (state.mode === 'duel') {
+            chosenTeam = state.players.some((player) => player.team === 1) ? 2 : 1;
+        }
 
         // Keep team selection explicit so the UI can behave like a true seat picker.
-        if (chosenTeam === 1 && team1Count >= 2) {
+        if (chosenTeam === 1 && team1Count >= (state.mode === 'duel' ? 1 : 2)) {
             socket.emit('error', 'Team 1 is full.');
             return;
         }
 
-        if (chosenTeam === 2 && team2Count >= 2) {
+        if (chosenTeam === 2 && team2Count >= (state.mode === 'duel' ? 1 : 2)) {
             socket.emit('error', 'Team 2 is full.');
             return;
         }
@@ -262,7 +300,7 @@ export class TrucoGameManager {
 
         socket.join(roomId);
 
-        if (state.players.length === 4) {
+        if (state.players.length === capacity) {
             this.startGame(roomId);
         } else {
             this.emitState(state);
@@ -280,6 +318,8 @@ export class TrucoGameManager {
             hostPlayerId: state.hostPlayerId,
             hostPlayerName: state.hostPlayerName,
             dev: state.dev,
+            mode: state.mode,
+            duelCardCount: state.duelCardCount,
             players: state.players.map((player) => ({
                 id: player.id,
                 name: player.name,
@@ -301,8 +341,10 @@ export class TrucoGameManager {
                 status: state.status,
                 hostPlayerName: state.hostPlayerName,
                 isDevRoom: Boolean(state.dev?.enabled),
+                mode: state.mode,
+                duelCardCount: state.duelCardCount,
                 seatedPlayers: state.players.length,
-                openSeats: Math.max(0, 4 - state.players.length),
+                openSeats: Math.max(0, this.roomCapacity(state) - state.players.length),
                 players: state.players.map((player) => ({
                     name: player.name,
                     // Public lobby data only needs the fixed two-team seating model.
@@ -349,12 +391,17 @@ export class TrucoGameManager {
 
         socket.join(state.roomId);
 
-        // The solo dev room is always seated as T1, T2, T1, T2.
-        state.players.push(this.createBotPlayer(state.roomId, 1, 2));
-        state.players.push(this.createBotPlayer(state.roomId, 2, 1));
-        state.players.push(this.createBotPlayer(state.roomId, 3, 2));
+        if (state.mode === 'duel') {
+            state.players.push(this.createBotPlayer(state.roomId, 1, 2));
+            this.appendDevLog(state, `${playerName} joined the 1v1 duel dev room. Seated Dev Bot North as opponent.`);
+        } else {
+            // The solo dev room is always seated as T1, T2, T1, T2.
+            state.players.push(this.createBotPlayer(state.roomId, 1, 2));
+            state.players.push(this.createBotPlayer(state.roomId, 2, 1));
+            state.players.push(this.createBotPlayer(state.roomId, 3, 2));
+            this.appendDevLog(state, `${playerName} joined the dev room. Filling the remaining seats with server bots.`);
+        }
 
-        this.appendDevLog(state, `${playerName} joined the dev room. Filling the remaining seats with server bots.`);
         this.startGame(state.roomId);
     }
 
@@ -370,7 +417,7 @@ export class TrucoGameManager {
         const state = this.rooms.get(roomId);
         if (!state || state.status !== 'game_end') return;
         if (!state.players.some((player) => player.id === socket.id)) return;
-        if (state.players.length !== 4) return;
+        if (state.players.length !== this.roomCapacity(state)) return;
 
         // Reuse the seated players so the rematch preserves the exact same teams.
         this.startGame(roomId);
@@ -378,13 +425,16 @@ export class TrucoGameManager {
 
     private startGame(roomId: string) {
         const state = this.rooms.get(roomId);
-        if (!state || state.players.length !== 4) return;
+        if (!state || state.players.length !== this.roomCapacity(state)) return;
 
         const team1Players = state.players.filter((player) => player.team === 1);
         const team2Players = state.players.filter((player) => player.team === 2);
-        state.players = [team1Players[0]!, team2Players[0]!, team1Players[1]!, team2Players[1]!];
+        state.players = state.mode === 'duel'
+            ? [team1Players[0]!, team2Players[0]!]
+            : [team1Players[0]!, team2Players[0]!, team1Players[1]!, team2Players[1]!];
         state.startingPlayerIndex = 0;
         state.points = { team1: 0, team2: 0 };
+        state.matchWins = { team1: 0, team2: 0 };
 
         if (state.dev?.enabled && !this.roomRngs.has(roomId)) {
             this.roomRngs.set(roomId, this.createSeededRng(state.dev.seed));
@@ -404,7 +454,7 @@ export class TrucoGameManager {
         state.manilhaRank = getManilhaRank(state.vira.rank);
 
         for (const player of state.players) {
-            player.hand = [state.deck.pop()!, state.deck.pop()!, state.deck.pop()!];
+            player.hand = Array.from({ length: this.cardsPerHand(state) }, () => state.deck.pop()!);
             player.hand = setManilhas(player.hand, state.manilhaRank);
             player.exposedHand = false;
             player.maoBaixaReady = false;
@@ -413,6 +463,9 @@ export class TrucoGameManager {
         state.table = [];
         state.tricks = { team1: 0, team2: 0 };
         state.roundPoints = 1;
+        if (state.mode === 'duel') {
+            state.points = { team1: 0, team2: 0 };
+        }
         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
         state.lastTrickWinner = null;
         state.lastTrickWinnerName = null;
@@ -432,14 +485,14 @@ export class TrucoGameManager {
 
         this.appendDevLog(state, `Starting round at ${state.points.team1}-${state.points.team2}.`);
 
-        if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
+        if (state.mode === 'classic' && (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE)) {
             state.status = 'game_end';
             state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
             this.emitState(state);
             return;
         }
 
-        if (state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE) {
+        if (state.mode === 'classic' && state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE) {
             state._phase = 'MAO_DE_FERRO';
             state.maoDeFerroActive = true;
             for (const player of state.players) {
@@ -451,8 +504,8 @@ export class TrucoGameManager {
             return;
         }
 
-        const team1Has11 = state.points.team1 >= ENDGAME_ENTRY_SCORE;
-        const team2Has11 = state.points.team2 >= ENDGAME_ENTRY_SCORE;
+        const team1Has11 = state.mode === 'classic' && state.points.team1 >= ENDGAME_ENTRY_SCORE;
+        const team2Has11 = state.mode === 'classic' && state.points.team2 >= ENDGAME_ENTRY_SCORE;
         if (team1Has11 || team2Has11) {
             const onzeTeam = team1Has11 ? 1 : 2;
             state._phase = 'MAO_DE_ONZE_DECISION';
@@ -496,7 +549,7 @@ export class TrucoGameManager {
 
                 this.scheduleRoomTask(state.roomId, 3000, () => {
                     const winnerIndex = state.players.findIndex((candidate) => candidate.team === opponentTeam);
-                    state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % 4;
+                    state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
                     this.startNewRound(state);
                 });
                 return;
@@ -565,8 +618,9 @@ export class TrucoGameManager {
                         caller.exposedHand = !isTruth;
 
                         if (isTruth) {
-                            if (state.deck.length >= 3) {
-                                caller.hand = setManilhas([state.deck.pop()!, state.deck.pop()!, state.deck.pop()!], state.manilhaRank!);
+                            const handSize = this.cardsPerHand(state);
+                            if (state.deck.length >= handSize) {
+                                caller.hand = setManilhas(Array.from({ length: handSize }, () => state.deck.pop()!), state.manilhaRank!);
                                 caller.maoBaixaReady = false;
                             }
                             // If the deck was too short to redeal, the caller keeps their current hand.
@@ -591,8 +645,9 @@ export class TrucoGameManager {
 
                 if (callType === 'accept') {
                     this.addNotification(state, `${player.name} allowed the hand switch.`, player.team);
-                    if (state.deck.length >= 3) {
-                        caller.hand = setManilhas([state.deck.pop()!, state.deck.pop()!, state.deck.pop()!], state.manilhaRank!);
+                    const handSize = this.cardsPerHand(state);
+                    if (state.deck.length >= handSize) {
+                        caller.hand = setManilhas(Array.from({ length: handSize }, () => state.deck.pop()!), state.manilhaRank!);
                         caller.maoBaixaReady = false;
                     } else {
                         caller.maoBaixaReady = true;
@@ -721,7 +776,7 @@ export class TrucoGameManager {
         if (state.status !== 'playing') return;
         if (state._phase !== 'TRICK_PHASE') return;
         if (playerIndex !== state.currentTurnIndex) return;
-        if (state.table.length >= 4) return;
+        if (state.table.length >= state.players.length) return;
         if (state.callState.awaitingResponseFromTeam !== null) return;
 
         const player = state.players[playerIndex];
@@ -737,8 +792,8 @@ export class TrucoGameManager {
         bugReportManager.logGameEvent(state.roomId, `${player.name} played ${this.describeCard(card)}.`);
         this.appendDevLog(state, `${player.name} played ${this.describeCard(card)}.`);
 
-        if (state.table.length < 4) {
-            state.currentTurnIndex = (state.currentTurnIndex + 1) % 4;
+        if (state.table.length < state.players.length) {
+            state.currentTurnIndex = (state.currentTurnIndex + 1) % state.players.length;
             this.emitState(state);
         } else {
             this.evaluateTrick(state);
@@ -747,7 +802,7 @@ export class TrucoGameManager {
 
     private evaluateTrick(state: GameState) {
         let winningEntryIndex = 0;
-        for (let index = 1; index < 4; index++) {
+        for (let index = 1; index < state.players.length; index++) {
             const currentCard = state.table[index]!.card;
             const winningCard = state.table[winningEntryIndex]!.card;
             if (compareCards(currentCard, winningCard) > 0) {
@@ -769,7 +824,7 @@ export class TrucoGameManager {
         state.lastTrickWinner = winnerTeamFinal;
         state.lastTrickWinnerName = winnerTeamFinal ? winningPlayerName : null;
 
-        const tricksPlayed = 3 - state.players[0]!.hand.length;
+        const tricksPlayed = this.cardsPerHand(state) - state.players[0]!.hand.length;
 
         if (winnerTeamFinal) {
             this.addNotification(state, `${winningPlayerName} won the trick.`, winningTeam);
@@ -781,7 +836,9 @@ export class TrucoGameManager {
 
         const roundWinner = state.tricks.team1 > state.tricks.team2 ? 1 : state.tricks.team2 > state.tricks.team1 ? 2 : null;
 
-        if (state.tricks.team1 >= 2 || state.tricks.team2 >= 2 || tricksPlayed >= 3) {
+        const tricksToWin = state.mode === 'duel' ? (state.duelCardCount === 3 ? 2 : 3) : 2;
+        const cardsPerHand = this.cardsPerHand(state);
+        if (state.tricks.team1 >= tricksToWin || state.tricks.team2 >= tricksToWin || tricksPlayed >= cardsPerHand) {
             this.scheduleRoomTask(state.roomId, 2500, () => {
                 const nextStarter = winnerTeamFinal ? winningPlayerIndex : undefined;
                 this.endRound(state, roundWinner ?? (state.startingPlayerIndex % 2 === 0 ? 1 : 2), nextStarter);
@@ -818,6 +875,7 @@ export class TrucoGameManager {
     }
 
     private shouldEndRoundAfterSpecialCall(state: GameState): boolean {
+        if (state.mode === 'duel') return false;
         const reachedGameWin = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
         const reachedMaoDeFerro = state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE;
         const reachedEndgameEntry = state.points.team1 >= ENDGAME_ENTRY_SCORE || state.points.team2 >= ENDGAME_ENTRY_SCORE;
@@ -853,7 +911,7 @@ export class TrucoGameManager {
             }
 
             const winnerIndex = state.players.findIndex((candidate) => candidate.team === winningTeam);
-            state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % 4;
+            state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
             this.startNewRound(state);
         });
     }
@@ -861,6 +919,27 @@ export class TrucoGameManager {
     private endRound(state: GameState, winningTeam: number, nextStarterIndex?: number) {
         bugReportManager.logGameEvent(state.roomId, `Round won by Team ${winningTeam}.`);
         state.winnerTeam = winningTeam;
+        if (state.mode === 'duel') {
+            if (winningTeam === 1) state.matchWins.team1 += 1;
+            if (winningTeam === 2) state.matchWins.team2 += 1;
+            state.status = state.matchWins.team1 >= DUEL_HANDS_TO_WIN || state.matchWins.team2 >= DUEL_HANDS_TO_WIN
+                ? 'game_end'
+                : 'round_end';
+            state._phase = state.status === 'game_end' ? undefined : 'ROUND_END';
+            this.emitState(state);
+            if (state.status !== 'game_end') {
+                this.scheduleRoomTask(state.roomId, 3000, () => {
+                    if (nextStarterIndex !== undefined) {
+                        state.startingPlayerIndex = nextStarterIndex;
+                    } else {
+                        const winnerIndex = state.players.findIndex((player) => player.team === winningTeam);
+                        state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
+                    }
+                    this.startNewRound(state);
+                });
+            }
+            return;
+        }
         if (state.maoDeFerroActive) {
             this.addNotification(state, `Team ${winningTeam} won Mao de Ferro and the game.`, winningTeam);
             state.maoDeFerroActive = false;
@@ -914,7 +993,7 @@ export class TrucoGameManager {
                     state.startingPlayerIndex = nextStarterIndex;
                 } else {
                     const winnerIndex = state.players.findIndex((player) => player.team === winningTeam);
-                    state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % 4;
+                    state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
                 }
                 this.startNewRound(state);
             });
@@ -931,7 +1010,7 @@ export class TrucoGameManager {
                 state.startingPlayerIndex = nextStarterIndex;
             } else {
                 const winnerIndex = state.players.findIndex((player) => player.team === winningTeam);
-                state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % 4;
+                state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
             }
             this.startNewRound(state);
         });

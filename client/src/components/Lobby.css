@@ -421,3 +421,215 @@ input:focus {
     justify-content: center;
     margin-top: 8px;
 }
+
+
+/* ── Mode Selector ────────────────────────────────────── */
+.mode-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.25rem;
+}
+
+.mode-selector-label {
+    font-size: 0.825rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mode-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+    .mode-cards-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.mode-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.9rem 1rem;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+}
+
+.mode-card:hover {
+    background: rgba(30, 41, 59, 0.75);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.mode-card.selected {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);
+}
+
+.mode-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.mode-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.mode-card-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    white-space: nowrap;
+}
+
+.mode-card-badge.badge-classic {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.mode-card-desc {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    margin: 0;
+}
+
+.room-mode-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.room-mode-badge.mode-duel {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.room-mode-badge.mode-classic {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.rules-lobby-btn {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+.dev-mode-select {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.dev-mode-btn {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+}
+
+.dev-mode-btn.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+    border-color: #10b981;
+    font-weight: 600;
+}
+
+
+/* ── 1v1 Hand Size Selector ───────────────────────────── */
+.duel-variant-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.75rem 1rem;
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-radius: 10px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.duel-variant-label {
+    font-size: 0.775rem;
+    font-weight: 700;
+    color: #fbbf24;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.duel-variant-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+    .duel-variant-buttons {
+        flex-direction: column;
+    }
+}
+
+.duel-variant-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.825rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(15, 23, 42, 0.6);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.duel-variant-btn:hover {
+    background: rgba(30, 41, 59, 0.8);
+    border-color: rgba(251, 191, 36, 0.4);
+    color: white;
+}
+
+.duel-variant-btn.active {
+    background: #fbbf24;
+    color: #0f172a;
+    border-color: #fbbf24;
+    font-weight: 700;
+    box-shadow: 0 2px 10px rgba(251, 191, 36, 0.35);
+}

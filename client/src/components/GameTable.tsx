@@ -218,14 +218,15 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const getRelativePlayer = (offset: number) => {
         const myIndex = gameState.players.findIndex((p: any) => p.id === currentPlayerId);
         if (myIndex === -1) return undefined;
-        const targetIndex = (myIndex + offset) % 4;
+        const targetIndex = (myIndex + offset) % gameState.players.length;
         return gameState.players[targetIndex];
     };
 
     const me = getRelativePlayer(0);
-    const rightPlayer = getRelativePlayer(1);
-    const topPlayer = getRelativePlayer(2);   // Partner
-    const leftPlayer = getRelativePlayer(3);
+    const isDuel = gameState.mode === 'duel';
+    const rightPlayer = isDuel ? undefined : getRelativePlayer(1);
+    const topPlayer = getRelativePlayer(isDuel ? 1 : 2);
+    const leftPlayer = isDuel ? undefined : getRelativePlayer(3);
 
     const isMyTurn = gameState.players[gameState.currentTurnIndex]?.id === currentPlayerId;
     const tricksPlayed = gameState.tricks.team1 + gameState.tricks.team2;
@@ -234,9 +235,11 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const canCallDouble = !endgameHandActive && gameState.roundPoints === 3 && gameState.callState.lastCallTeam !== me?.team;
     const canCallTriple = !endgameHandActive && gameState.roundPoints === 6 && gameState.callState.lastCallTeam !== me?.team;
     const canCallMao = tricksPlayed === 0 && !gameState.callState.type && !me?.maoBaixaReady;
-    const winningTeamLabel = (gameState.winnerTeam === 1 || (gameState.winnerTeam == null && gameState.points.team1 > gameState.points.team2))
-        ? '🔵 Team 1 wins the GAME!'
-        : '🔴 Team 2 wins the GAME!';
+    const winningTeam = gameState.winnerTeam
+        ?? (gameState.points.team1 > gameState.points.team2 ? 1 : gameState.points.team2 > gameState.points.team1 ? 2 : null);
+    const winningTeamLabel = isDuel
+        ? (winningTeam === me?.team ? '🏆 You win the match!' : '🏆 Opponent wins the match!')
+        : (winningTeam === 1 ? '🔵 Team 1 wins the GAME!' : '🔴 Team 2 wins the GAME!');
     const roundWinnerTeam = gameState.winnerTeam
         ?? (gameState.tricks.team1 > gameState.tricks.team2 ? 1 : gameState.tricks.team2 > gameState.tricks.team1 ? 2 : null);
 
@@ -374,9 +377,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             </div>
                         </div>
                         <div className="menu-score">
-                            <span>Team 1: <strong>{gameState.points.team1}</strong></span>
+                            <span>{isDuel ? 'You' : 'Team 1'}: <strong>{isDuel ? gameState.matchWins?.[me?.team === 2 ? 'team2' : 'team1'] ?? 0 : gameState.points.team1}</strong></span>
                             <span>vs</span>
-                            <span>Team 2: <strong>{gameState.points.team2}</strong></span>
+                            <span>{isDuel ? 'Opponent' : 'Team 2'}: <strong>{isDuel ? gameState.matchWins?.[me?.team === 2 ? 'team1' : 'team2'] ?? 0 : gameState.points.team2}</strong></span>
                         </div>
                         {secretDebugAvailable && !secretDebugActive && (
                             <section className="secret-debug-section">
@@ -561,7 +564,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     {gameState.status === 'game_end' && (
                         <div className="round-result game-end">
                             <div className="game-end-title">{winningTeamLabel}</div>
-                            <div className="game-end-subtitle">Anyone can start a rematch with the same teams.</div>
+                            <div className="game-end-subtitle">{isDuel ? `Best of ${gameState.duelCardCount === 3 ? 'three' : 'five'} tricks per hand — first to three hands wins.` : 'Anyone can start a rematch with the same teams.'}</div>
                             <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
                                 Start Rematch
                             </button>

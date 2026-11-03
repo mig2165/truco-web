@@ -29,6 +29,8 @@ type RoomPreviewPlayer = {
 type RoomPreviewState = {
     roomId: string;
     status: string;
+    mode: 'classic' | 'duel';
+    duelCardCount?: 3 | 5;
     dev?: { enabled?: boolean };
     players: RoomPreviewPlayer[];
 };
@@ -122,6 +124,8 @@ export const Room: React.FC = () => {
 
     const playerName = new URLSearchParams(location.search).get('name') || 'Player';
     const isCreating = new URLSearchParams(location.search).get('create') === '1';
+    const isDuelRoom = new URLSearchParams(location.search).get('mode') === 'duel' || roomPreview?.mode === 'duel';
+    const roomCapacity = isDuelRoom ? 2 : 4;
     const notificationsSupported = isBrowserNotificationSupported();
 
     // Auto-pick Team 1 for the room creator; others see team selection
@@ -191,6 +195,8 @@ export const Room: React.FC = () => {
             setRoomPreview({
                 roomId: state.roomId,
                 status: state.status,
+                mode: state.mode ?? 'classic',
+                duelCardCount: state.duelCardCount,
                 dev: state.dev,
                 players: state.players.map((player: any) => ({
                     id: player.id,
@@ -252,7 +258,7 @@ export const Room: React.FC = () => {
     useEffect(() => {
         if (!socket || !roomId || !teamPick || joinInFlight || joinedRoom || hasJoined.current) return;
 
-        if ((roomPreview?.players.length ?? 0) >= 4) {
+        if ((roomPreview?.players.length ?? 0) >= roomCapacity) {
             window.alert('Game full!');
             navigate('/');
             return;
@@ -260,7 +266,7 @@ export const Room: React.FC = () => {
 
         setJoinInFlight(true);
         socket.emit('joinRoom', roomId, playerName, teamPick);
-    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate]);
+    }, [socket, roomId, playerName, teamPick, roomPreview, joinInFlight, joinedRoom, navigate, roomCapacity]);
 
     useEffect(() => {
         if (!gameState || !socket?.id) {
@@ -372,9 +378,9 @@ export const Room: React.FC = () => {
     const previewPlayers = roomPreview?.players ?? [];
     const team1PreviewPlayers = previewPlayers.filter((player) => player.team === 1);
     const team2PreviewPlayers = previewPlayers.filter((player) => player.team === 2);
-    const roomIsFull = previewPlayers.length >= 4;
-    const team1IsFull = team1PreviewPlayers.length >= 2;
-    const team2IsFull = team2PreviewPlayers.length >= 2;
+    const roomIsFull = previewPlayers.length >= roomCapacity;
+    const team1IsFull = team1PreviewPlayers.length >= (isDuelRoom ? 1 : 2);
+    const team2IsFull = team2PreviewPlayers.length >= (isDuelRoom ? 1 : 2);
 
     const renderPickerSlots = (players: RoomPreviewPlayer[], team: 1 | 2) => (
         <>
@@ -384,7 +390,7 @@ export const Room: React.FC = () => {
                     {player.name}
                 </div>
             ))}
-            {Array.from({ length: Math.max(0, 2 - players.length) }).map((_, index) => (
+            {Array.from({ length: Math.max(0, (isDuelRoom ? 1 : 2) - players.length) }).map((_, index) => (
                 <div key={`${team}-open-${index}`} className="player-pill empty">Open slot...</div>
             ))}
         </>
@@ -407,11 +413,22 @@ export const Room: React.FC = () => {
         return (
             <div className="room-container center">
                 <div className="team-picker glass-panel">
-                    <h2>Pick Your Team</h2>
+                    <h2>{isDuelRoom ? 'Join the Duel' : 'Pick Your Team'}</h2>
                     <p className="subtitle">Room: <strong>{roomId}</strong></p>
                     <p className={`team-picker-status ${roomIsFull ? 'full' : ''}`}>
-                        {roomIsFull ? 'Game full!' : `${previewPlayers.length}/4 players seated. Click a team to join.`}
+                        {roomIsFull ? 'Game full!' : isDuelRoom
+                            ? `${previewPlayers.length}/2 players seated. Join the open seat to start a 1v1 match.`
+                            : `${previewPlayers.length}/4 players seated. Click a team to join.`}
                     </p>
+                    {isDuelRoom ? (
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => handleTeamSelection(team1IsFull ? 2 : 1)}
+                            disabled={joinInFlight || roomIsFull}
+                        >
+                            <Users size={18} /> Join 1v1 Duel
+                        </button>
+                    ) : (
                     <div className="team-pick-grid">
                         <button
                             className="team-seat-card team-1-card"
@@ -447,7 +464,8 @@ export const Room: React.FC = () => {
                             </span>
                         </button>
                     </div>
-                    {roomIsFull && <p className="team-picker-warning">All four seats are already taken.</p>}
+                    )}
+                    {roomIsFull && <p className="team-picker-warning">{isDuelRoom ? 'Both duel seats are already taken.' : 'All four seats are already taken.'}</p>}
                     <ChangelogLauncher
                         className="btn changelog-update-btn team-picker-changelog-btn"
                         label="UPDATE! View changelog"
@@ -468,6 +486,7 @@ export const Room: React.FC = () => {
 
     const isWaiting = gameState.status === 'waiting';
     const isDevRoom = Boolean(gameState.dev?.enabled);
+    const myTeam = gameState.players.find((player: any) => player.id === socket?.id)?.team;
 
     return (
         <div className="room-container">
@@ -484,7 +503,7 @@ export const Room: React.FC = () => {
                 </div>
                 <div className="header-center">
                     {isWaiting ? (
-                        <h2>{isDevRoom ? 'Preparing dev room...' : `Waiting for players... (${gameState.players.length}/4)`}</h2>
+                        <h2>{isDevRoom ? 'Preparing dev room...' : `Waiting for players... (${gameState.players.length}/${gameState.mode === 'duel' ? 2 : 4})`}</h2>
                     ) : (
                         <h2>Truco</h2>
                     )}
@@ -494,9 +513,13 @@ export const Room: React.FC = () => {
                         <EconomyWidget playerId={user.id} playerName={user.displayName} />
                     )}
                     <div className="points-badge">
-                        <span className="team1">Team 1: {gameState.points.team1}</span>
+                        <span className="team1">{gameState.mode === 'duel'
+                            ? `You: ${gameState.matchWins?.[myTeam === 2 ? 'team2' : 'team1'] ?? 0}`
+                            : `Team 1: ${gameState.points.team1}`}</span>
                         <span className="divider">|</span>
-                        <span className="team2">Team 2: {gameState.points.team2}</span>
+                        <span className="team2">{gameState.mode === 'duel'
+                            ? `Opponent: ${gameState.matchWins?.[myTeam === 2 ? 'team1' : 'team2'] ?? 0}`
+                            : `Team 2: ${gameState.points.team2}`}</span>
                     </div>
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />
@@ -543,7 +566,7 @@ export const Room: React.FC = () => {
                         {isWaiting ? (
                             <div className="waiting-lobby glass-panel">
                                 <Users size={48} className="lobby-icon" />
-                                <h3>Players ({gameState.players.length}/4)</h3>
+                                <h3>{gameState.mode === 'duel' ? 'Duelists' : 'Players'} ({gameState.players.length}/{gameState.mode === 'duel' ? 2 : 4})</h3>
 
                                 <div className="teams-grid">
                                     <div className="team-col team-1-col">
@@ -554,7 +577,7 @@ export const Room: React.FC = () => {
                                                 {p.name} {p.id === socket?.id ? '(You)' : ''}
                                             </div>
                                         ))}
-                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
+                                        {Array.from({ length: Math.max(0, (gameState.mode === 'duel' ? 1 : 2) - gameState.players.filter((p: any) => p.team === 1).length) }).map((_, i) => (
                                             <div key={i} className="player-pill empty">Open slot...</div>
                                         ))}
                                     </div>
@@ -567,14 +590,20 @@ export const Room: React.FC = () => {
                                                 {p.name} {p.id === socket?.id ? '(You)' : ''}
                                             </div>
                                         ))}
-                                        {Array.from({ length: Math.max(0, 2 - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
+                                        {Array.from({ length: Math.max(0, (gameState.mode === 'duel' ? 1 : 2) - gameState.players.filter((p: any) => p.team === 2).length) }).map((_, i) => (
                                             <div key={i} className="player-pill empty">Open slot...</div>
                                         ))}
                                     </div>
                                 </div>
 
                                 <div className="room-invite">
-                                    <p>{isDevRoom ? 'Debug room code:' : 'Share this code with your friends:'}</p>
+                                    <p>
+                                        {isDevRoom
+                                            ? 'Debug room code:'
+                                            : gameState.mode === 'duel'
+                                            ? 'Invite 1 friend to play against you:'
+                                            : 'Invite 3 friends to play with you:'}
+                                    </p>
                                     <div className="invite-code" onClick={copyCode}>
                                         {roomId} {copied ? '✓' : <Copy size={14} />}
                                     </div>
@@ -588,7 +617,7 @@ export const Room: React.FC = () => {
                                 {isDevRoom ? (
                                     <p className="hint">Server bots are being seated and the round will auto-start.</p>
                                 ) : (
-                                    <p className="hint">Need {4 - gameState.players.length} more player(s)...</p>
+                                    <p className="hint">Need {(gameState.mode === 'duel' ? 2 : 4) - gameState.players.length} more player(s)...</p>
                                 )}
                             </div>
                         ) : (
@@ -622,7 +651,12 @@ export const Room: React.FC = () => {
             </main>
 
             {/* Rules Panel */}
-            {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
+            {rulesOpen && (
+                <RulesPanel
+                    onClose={() => setRulesOpen(false)}
+                    mode={gameState?.mode ?? roomPreview?.mode ?? (isDuelRoom ? 'duel' : 'classic')}
+                />
+            )}
         </div>
     );
 };
