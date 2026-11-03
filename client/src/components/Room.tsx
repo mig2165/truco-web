@@ -514,12 +514,12 @@ export const Room: React.FC = () => {
                     )}
                     <div className="points-badge">
                         <span className="team1">{gameState.mode === 'duel'
-                            ? `You: ${gameState.matchWins?.[myTeam === 2 ? 'team2' : 'team1'] ?? 0}`
-                            : `Team 1: ${gameState.points.team1}`}</span>
+                            ? `You: ${myTeam === 2 ? gameState.points.team2 : gameState.points.team1} pts`
+                            : `Team 1: ${gameState.points.team1} pts`}</span>
                         <span className="divider">|</span>
                         <span className="team2">{gameState.mode === 'duel'
-                            ? `Opponent: ${gameState.matchWins?.[myTeam === 2 ? 'team1' : 'team2'] ?? 0}`
-                            : `Team 2: ${gameState.points.team2}`}</span>
+                            ? `Opponent: ${myTeam === 2 ? gameState.points.team1 : gameState.points.team2} pts`
+                            : `Team 2: ${gameState.points.team2} pts`}</span>
                     </div>
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />

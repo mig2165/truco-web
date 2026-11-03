@@ -463,9 +463,6 @@ export class TrucoGameManager {
         state.table = [];
         state.tricks = { team1: 0, team2: 0 };
         state.roundPoints = 1;
-        if (state.mode === 'duel') {
-            state.points = { team1: 0, team2: 0 };
-        }
         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
         state.lastTrickWinner = null;
         state.lastTrickWinnerName = null;
@@ -485,7 +482,7 @@ export class TrucoGameManager {
 
         this.appendDevLog(state, `Starting round at ${state.points.team1}-${state.points.team2}.`);
 
-        if (state.mode === 'classic' && (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE)) {
+        if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
             state.status = 'game_end';
             state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
             this.emitState(state);
@@ -864,8 +861,9 @@ export class TrucoGameManager {
     }
 
     private awardPoints(state: GameState, team: number, amount: number, options?: { allowGameWin?: boolean }) {
-        // Normal scoring is capped at 11 so raised rounds still flow into Mao de Onze/Ferro.
-        const scoreCap = options?.allowGameWin ? GAME_WIN_SCORE : ENDGAME_ENTRY_SCORE;
+        // In 1v1 duel mode, points go directly up to 12 (GAME_WIN_SCORE).
+        // In 2v2 classic mode, normal scoring is capped at 11 so raised rounds still flow into Mao de Onze/Ferro.
+        const scoreCap = (state.mode === 'duel' || options?.allowGameWin) ? GAME_WIN_SCORE : ENDGAME_ENTRY_SCORE;
 
         if (team === 1) {
             state.points.team1 = Math.min(state.points.team1 + amount, scoreCap);
@@ -875,7 +873,9 @@ export class TrucoGameManager {
     }
 
     private shouldEndRoundAfterSpecialCall(state: GameState): boolean {
-        if (state.mode === 'duel') return false;
+        if (state.mode === 'duel') {
+            return state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
+        }
         const reachedGameWin = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
         const reachedMaoDeFerro = state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE;
         const reachedEndgameEntry = state.points.team1 >= ENDGAME_ENTRY_SCORE || state.points.team2 >= ENDGAME_ENTRY_SCORE;
@@ -922,12 +922,15 @@ export class TrucoGameManager {
         if (state.mode === 'duel') {
             if (winningTeam === 1) state.matchWins.team1 += 1;
             if (winningTeam === 2) state.matchWins.team2 += 1;
-            state.status = state.matchWins.team1 >= DUEL_HANDS_TO_WIN || state.matchWins.team2 >= DUEL_HANDS_TO_WIN
-                ? 'game_end'
-                : 'round_end';
-            state._phase = state.status === 'game_end' ? undefined : 'ROUND_END';
+            this.awardPoints(state, winningTeam, state.roundPoints, { allowGameWin: true });
+            const isGameEnd = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
+            state.status = isGameEnd ? 'game_end' : 'round_end';
+            state._phase = isGameEnd ? undefined : 'ROUND_END';
+            if (isGameEnd) {
+                state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
+            }
             this.emitState(state);
-            if (state.status !== 'game_end') {
+            if (!isGameEnd) {
                 this.scheduleRoomTask(state.roomId, 3000, () => {
                     if (nextStarterIndex !== undefined) {
                         state.startingPlayerIndex = nextStarterIndex;

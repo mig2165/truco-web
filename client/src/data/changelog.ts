@@ -25,7 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                 items: [
                     'Choose between 1v1 Duel mode (invite 1 friend) and 2v2 Classic mode (invite 3 friends).',
                     'Sign in with an account or play instantly as Guest in either mode.',
-                    'In 1v1 Duel: Choose between 3-card (fast, best of 3 tricks) and 5-card (strategic, best of 5 tricks) versions. First to 3 hands takes the match!',
+                    'In 1v1 Duel: Choose between 3-card and 5-card versions. Truco (3 pts), Double (6 pts), and Triple (9 pts) multiply stakes towards 12 points to win!',
                     'In 2v2 Classic: traditional 4-player team Truco, 3 cards per hand, first to 12 points.',
                     'Dynamic rules modal adapting to 1v1 Duel or 2v2 Classic rules.',
                     'Solo Dev Mode support for both 1v1 (1 bot opponent) and 2v2 (3 bots).',

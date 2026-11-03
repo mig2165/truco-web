@@ -47,7 +47,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose, mode = 'classic
                                         </ul>
                                     </li>
                                     <li>No 8s, 9s, or 10s in the deck</li>
-                                    <li><strong>Match Victory:</strong> Best of 5 hands — the first player to win <strong>3 hands</strong> wins the match!</li>
+                                    <li><strong>Match Victory:</strong> First player to reach <strong>12 points</strong> wins the match! A standard hand awards 1 pt, Truco raises to 3 pts, Double to 6 pts, and Triple to 9 pts.</li>
                                 </ul>
                             </section>
 

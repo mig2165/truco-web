@@ -377,9 +377,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             </div>
                         </div>
                         <div className="menu-score">
-                            <span>{isDuel ? 'You' : 'Team 1'}: <strong>{isDuel ? gameState.matchWins?.[me?.team === 2 ? 'team2' : 'team1'] ?? 0 : gameState.points.team1}</strong></span>
+                            <span>{isDuel ? 'You' : 'Team 1'}: <strong>{isDuel ? (me?.team === 2 ? gameState.points.team2 : gameState.points.team1) : gameState.points.team1}</strong> pts</span>
                             <span>vs</span>
-                            <span>{isDuel ? 'Opponent' : 'Team 2'}: <strong>{isDuel ? gameState.matchWins?.[me?.team === 2 ? 'team1' : 'team2'] ?? 0 : gameState.points.team2}</strong></span>
+                            <span>{isDuel ? 'Opponent' : 'Team 2'}: <strong>{isDuel ? (me?.team === 2 ? gameState.points.team1 : gameState.points.team2) : gameState.points.team2}</strong> pts</span>
                         </div>
                         {secretDebugAvailable && !secretDebugActive && (
                             <section className="secret-debug-section">
@@ -564,7 +564,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     {gameState.status === 'game_end' && (
                         <div className="round-result game-end">
                             <div className="game-end-title">{winningTeamLabel}</div>
-                            <div className="game-end-subtitle">{isDuel ? `Best of ${gameState.duelCardCount === 3 ? 'three' : 'five'} tricks per hand — first to three hands wins.` : 'Anyone can start a rematch with the same teams.'}</div>
+                            <div className="game-end-subtitle">{isDuel ? 'First player to reach 12 points wins the match!' : 'Anyone can start a rematch with the same teams.'}</div>
                             <button className="btn btn-primary rematch-button" onClick={handleStartRematch}>
                                 Start Rematch
                             </button>
