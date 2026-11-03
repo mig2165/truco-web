@@ -124,7 +124,7 @@ export const Room: React.FC = () => {
 
     const playerName = new URLSearchParams(location.search).get('name') || 'Player';
     const isCreating = new URLSearchParams(location.search).get('create') === '1';
-    const isDuelRoom = new URLSearchParams(location.search).get('mode') === 'duel' || roomPreview?.mode === 'duel';
+    const isDuelRoom = new URLSearchParams(location.search).get('mode') === 'duel' || roomPreview?.mode === 'duel' || gameState?.mode === 'duel';
     const roomCapacity = isDuelRoom ? 2 : 4;
     const notificationsSupported = isBrowserNotificationSupported();
 
