@@ -189,6 +189,7 @@ export class TrucoGameManager {
             points: { team1: 0, team2: 0 },
             roundPoints: 1,
             tricks: { team1: 0, team2: 0 },
+            trickHistory: [],
             table: [],
             startingPlayerIndex: 0,
             status: 'waiting',
@@ -462,6 +463,7 @@ export class TrucoGameManager {
 
         state.table = [];
         state.tricks = { team1: 0, team2: 0 };
+        state.trickHistory = [];
         state.roundPoints = 1;
         state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
         state.lastTrickWinner = null;
@@ -835,6 +837,22 @@ export class TrucoGameManager {
 
         state.lastTrickWinner = winnerTeamFinal;
         state.lastTrickWinnerName = winnerTeamFinal ? winningPlayerName : null;
+        if (!state.trickHistory) state.trickHistory = [];
+        state.trickHistory.push({
+            trickNumber: state.trickHistory.length + 1,
+            winnerTeam: winnerTeamFinal,
+            winnerName: winnerTeamFinal ? winningPlayerName : null,
+            winningPlayerIndex: winnerTeamFinal ? winningPlayerIndex : null,
+            cards: state.table.map((entry) => {
+                const p = state.players[entry.playerIndex];
+                return {
+                    playerIndex: entry.playerIndex,
+                    playerName: p?.name ?? `Player ${entry.playerIndex + 1}`,
+                    team: p?.team ?? 1,
+                    card: { ...entry.card }
+                };
+            })
+        });
 
         const tricksPlayed = this.cardsPerHand(state) - state.players[0]!.hand.length;
 

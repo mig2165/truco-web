@@ -35,6 +35,14 @@ export type DevState = {
     log: string[];
 };
 
+export interface TrickRecord {
+    trickNumber: number;
+    winnerTeam: number | null;
+    winnerName: string | null;
+    winningPlayerIndex: number | null;
+    cards: { playerIndex: number; playerName: string; team: number; card: Card }[];
+}
+
 export interface GameState {
     roomId: string;
     mode: 'classic' | 'duel';
@@ -50,6 +58,7 @@ export interface GameState {
     points: { team1: number; team2: number };
     roundPoints: number;
     tricks: { team1: number; team2: number };
+    trickHistory?: TrickRecord[];
     table: { playerIndex: number; card: Card }[];
     startingPlayerIndex: number;
     status: 'waiting' | 'dealing' | 'playing' | 'round_end' | 'game_end';

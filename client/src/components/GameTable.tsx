@@ -49,6 +49,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
     const [forfeitConfirmOpen, setForfeitConfirmOpen] = useState(false);
+    const [tricksTabExpanded, setTricksTabExpanded] = useState(false);
     const [pewPewActive, setPewPewActive] = useState(false);
     const [pewPewBurstId, setPewPewBurstId] = useState(0);
     const [snipeInfo, setSnipeInfo] = useState<SnipeBurstInfo | null>(null);
@@ -426,7 +427,10 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
                 {/* Card played on table — shown near this player position */}
                 {cardOnTable && position !== 'bottom' && (
-                    <div className={`played-card-near played-near-${position}`}>
+                    <div
+                        key={`played-${globalIndex}-${cardOnTable.rank}-${cardOnTable.suit}`}
+                        className={`played-card-near played-near-${position} played-card-animate`}
+                    >
                         {renderCard(cardOnTable, globalIndex)}
                         <div className={`played-by-label team-${player.team}`}>{player.name}</div>
                     </div>
@@ -443,6 +447,15 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const showTrickWinnerOverlay = gameState.status === 'playing' && Boolean(trickWinnerText);
 
     const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
+    const maxTricksInRound = isDuel ? (gameState.duelCardCount === 3 ? 3 : 5) : 3;
+    const trickHistoryList: any[] = Array.isArray(gameState.trickHistory) ? gameState.trickHistory : [];
+    // While a just-completed trick is still displayed in the center for 2.5s, keep only previous tricks on the side pile;
+    // once the center clears (or at round_end), move that trick onto the side pile too.
+    const isFullTrickStillCentered = gameState.status === 'playing' && gameState.table.length === gameState.players.length && gameState.players.length > 0;
+    const sidePileTricks = isFullTrickStillCentered
+        ? trickHistoryList.slice(0, -1)
+        : trickHistoryList;
+
     return (
         <div className="game-table-wrapper">
             {/* Player Menu */}
@@ -455,6 +468,88 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             <button className="report-trigger glass-panel" onClick={() => setReportOpen(true)}>
                 <AlertTriangle size={16} /> Report Issue
             </button>
+
+            {/* Mini Tricks Tracker Tab */}
+            <div className={`tricks-mini-tab glass-panel ${tricksTabExpanded ? 'expanded' : ''}`}>
+                <button
+                    type="button"
+                    className="tricks-mini-tab-header"
+                    onClick={() => setTricksTabExpanded((prev) => !prev)}
+                    title="Click to toggle trick-by-trick history"
+                >
+                    <div className="tricks-mini-title-row">
+                        <span className="tricks-mini-label">TRICKS</span>
+                        <span className="tricks-mini-stakes">{gameState.roundPoints} pt{gameState.roundPoints === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="tricks-mini-score-row">
+                        <span className="team-1">
+                            🔵 {isDuel ? (me?.team === 1 ? 'You' : 'P1') : 'T1'}: <strong>{gameState.tricks.team1}</strong>
+                        </span>
+                        <span className="tricks-mini-vs">–</span>
+                        <span className="team-2">
+                            🔴 {isDuel ? (me?.team === 2 ? 'You' : 'Opp') : 'T2'}: <strong>{gameState.tricks.team2}</strong>
+                        </span>
+                    </div>
+                    <div className="tricks-mini-pips">
+                        {Array.from({ length: maxTricksInRound }).map((_, idx) => {
+                            const record = trickHistoryList[idx];
+                            const pipClass = !record
+                                ? 'empty'
+                                : record.winnerTeam === 1
+                                    ? 'team-1-win'
+                                    : record.winnerTeam === 2
+                                        ? 'team-2-win'
+                                        : 'tie';
+                            return (
+                                <span
+                                    key={idx}
+                                    className={`trick-pip ${pipClass}`}
+                                    title={
+                                        !record
+                                            ? `Trick ${idx + 1}: Not played yet`
+                                            : record.winnerTeam
+                                                ? `Trick ${idx + 1}: Won by ${record.winnerName} (Team ${record.winnerTeam})`
+                                                : `Trick ${idx + 1}: Tied`
+                                    }
+                                >
+                                    {!record ? idx + 1 : record.winnerTeam === 1 ? '1' : record.winnerTeam === 2 ? '2' : '='}
+                                </span>
+                            );
+                        })}
+                        <span className="tricks-mini-chevron">{tricksTabExpanded ? '▾' : '▸'}</span>
+                    </div>
+                </button>
+
+                {tricksTabExpanded && (
+                    <div className="tricks-mini-body">
+                        {trickHistoryList.length === 0 ? (
+                            <div className="tricks-mini-empty">No tricks completed this round yet.</div>
+                        ) : (
+                            trickHistoryList.map((trick: any) => (
+                                <div key={trick.trickNumber} className="tricks-mini-history-item">
+                                    <div className="tricks-mini-history-head">
+                                        <span>Trick #{trick.trickNumber}</span>
+                                        <span className={trick.winnerTeam === 1 ? 'team-1' : trick.winnerTeam === 2 ? 'team-2' : ''}>
+                                            {trick.winnerTeam ? `🏆 ${trick.winnerName}` : '🤝 Tie'}
+                                        </span>
+                                    </div>
+                                    <div className="tricks-mini-history-cards">
+                                        {trick.cards.map((entry: any, cIdx: number) => (
+                                            <span
+                                                key={cIdx}
+                                                className={`tricks-mini-card-chip ${getSuitColor(entry.card?.suit)} ${trick.winningPlayerIndex === entry.playerIndex ? 'winner-chip' : ''}`}
+                                                title={entry.playerName}
+                                            >
+                                                {entry.card?.rank}{getSuitSymbol(entry.card?.suit)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Fixed Forfeit Round Button */}
             {me && gameState.status === 'playing' && (gameState._phase === 'WAITING_FOR_HAND_PHASE' || gameState._phase === 'TRICK_PHASE') && (
@@ -688,6 +783,40 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     </div>
                 )}
 
+                {/* Played cards left on the side of the table from previous tricks in this round */}
+                {sidePileTricks.length > 0 && (
+                    <div className={`table-side-pile ${isDuel ? 'duel-pile' : 'classic-pile'}`}>
+                        <div className="table-side-pile-label">Played Tricks</div>
+                        <div className="table-side-pile-list">
+                            {sidePileTricks.map((trick: any) => (
+                                <div
+                                    key={`side-trick-${trick.trickNumber}`}
+                                    className={`side-trick-cluster ${trick.winnerTeam === 1 ? 'won-team-1' : trick.winnerTeam === 2 ? 'won-team-2' : 'won-tie'}`}
+                                    title={trick.winnerTeam ? `Trick #${trick.trickNumber} — Won by ${trick.winnerName}` : `Trick #${trick.trickNumber} — Tied`}
+                                >
+                                    <div className="side-trick-badge">
+                                        #{trick.trickNumber} {trick.winnerTeam === 1 ? '🔵' : trick.winnerTeam === 2 ? '🔴' : '🤝'}
+                                    </div>
+                                    <div className="side-trick-cards">
+                                        {trick.cards.map((entry: any, cIdx: number) => {
+                                            const isWinningCard = trick.winningPlayerIndex === entry.playerIndex;
+                                            return (
+                                                <div
+                                                    key={cIdx}
+                                                    className={`mini-table-card ${isWinningCard ? 'mini-card-winner' : ''} ${entry.card?.isManilha ? 'mini-card-manilha' : ''}`}
+                                                >
+                                                    <span className={`mini-card-rank ${getSuitColor(entry.card?.suit)}`}>{entry.card?.rank}</span>
+                                                    <span className={`mini-card-suit ${getSuitColor(entry.card?.suit)}`}>{getSuitSymbol(entry.card?.suit)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Vira */}
                 <div className="table-center">
                     {gameState.vira && (
@@ -745,12 +874,18 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                         </div>
 
                         {/* Card played by me */}
-                        {getCardOnTable(getGlobalIndex(me)) && (
-                            <div className="played-card-near played-near-bottom">
-                                {renderCard(getCardOnTable(getGlobalIndex(me)), 99)}
-                                <div className={`played-by-label team-${me.team}`}>{me.name} (You)</div>
-                            </div>
-                        )}
+                        {(() => {
+                            const myPlayedCard = getCardOnTable(getGlobalIndex(me));
+                            return myPlayedCard ? (
+                                <div
+                                    key={`played-me-${myPlayedCard.rank}-${myPlayedCard.suit}`}
+                                    className="played-card-near played-near-bottom played-card-animate"
+                                >
+                                    {renderCard(myPlayedCard, 99)}
+                                    <div className={`played-by-label team-${me.team}`}>{me.name} (You)</div>
+                                </div>
+                            ) : null;
+                        })()}
 
                         {/* ── Mão de Onze Decision Phase buttons ── */}
                         {gameState.status === 'playing' && gameState._phase === 'MAO_DE_ONZE_DECISION' && gameState.maoDeOnzeTeam === me?.team && (
