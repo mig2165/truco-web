@@ -979,7 +979,7 @@ export class TrucoGameManager {
             state._phase = 'ROUND_END';
             this.emitState(state);
 
-            this.scheduleRoomTask(state.roomId, 3000, () => {
+            this.scheduleRoomTask(state.roomId, 2000, () => {
                 if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
                     state.status = 'game_end';
                     state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
@@ -1003,7 +1003,7 @@ export class TrucoGameManager {
         state._phase = 'ROUND_END';
         this.emitState(state);
 
-        this.scheduleRoomTask(state.roomId, 3000, () => {
+        this.scheduleRoomTask(state.roomId, 2000, () => {
             if (nextStarterIndex !== undefined) {
                 state.startingPlayerIndex = nextStarterIndex;
             } else {
@@ -1051,6 +1051,10 @@ export class TrucoGameManager {
                     }
 
                     if (state.maoDeOnzeTeam && viewer.team === state.maoDeOnzeTeam && player.team === state.maoDeOnzeTeam) {
+                        return { ...player, hand: player.hand };
+                    }
+
+                    if (state.status === 'round_end' || state.status === 'game_end') {
                         return { ...player, hand: player.hand };
                     }
 

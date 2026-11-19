@@ -331,7 +331,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {/* Cards in hand */}
                 {position !== 'bottom' && (
                     <div className={`player-hand ${vertical ? 'vertical' : ''}`}>
-                        {secretDebugActive || player.exposedHand || (gameState.maoDeOnzeTeam === me?.team && player.team === me?.team)
+                        {secretDebugActive || player.exposedHand || (gameState.maoDeOnzeTeam === me?.team && player.team === me?.team) || gameState.status === 'round_end' || gameState.status === 'game_end'
                             ? player.hand.map((card: any, i: number) => renderCard(card, i, false))
                             : player.hand.map((_: any, i: number) => renderCard(null, i, true))
                         }
