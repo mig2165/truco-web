@@ -1040,6 +1040,7 @@ export class TrucoGameManager {
 
             const privateState = {
                 ...state,
+                trickHistory: state.trickHistory ?? [],
                 secretDebug: {
                     available: this.secretDebugEnabled,
                     active: secretDebugActive
@@ -1499,6 +1500,7 @@ export class TrucoGameManager {
         state.points = waitingState.points;
         state.roundPoints = waitingState.roundPoints;
         state.tricks = waitingState.tricks;
+        state.trickHistory = waitingState.trickHistory ?? [];
         state.table = waitingState.table;
         state.startingPlayerIndex = waitingState.startingPlayerIndex;
         state.status = waitingState.status;

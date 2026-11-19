@@ -423,25 +423,25 @@
     justify-content: center;
 }
 
-/* ── Mini Tricks Tracker Tab (Bottom-Left Fixed HUD) ─── */
+/* ── Mini Tricks Tracker Tab (Top-Left Fixed HUD, clear of Teacher Mode) ─── */
 .tricks-mini-tab {
     position: absolute;
-    bottom: 16px;
-    left: 16px;
-    z-index: 200;
-    min-width: 170px;
-    max-width: 245px;
-    background: rgba(15, 23, 42, 0.78);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    top: 52px;
+    left: 12px;
+    z-index: 210;
+    min-width: 195px;
+    max-width: 265px;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
     overflow: hidden;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .tricks-mini-tab:hover {
-    border-color: rgba(251, 191, 36, 0.42);
+    border-color: rgba(251, 191, 36, 0.45);
 }
 
 .tricks-mini-tab-header {
@@ -467,8 +467,8 @@
 .tricks-mini-label {
     font-size: 0.68rem;
     font-weight: 800;
-    letter-spacing: 0.1em;
-    color: #94a3b8;
+    letter-spacing: 0.08em;
+    color: #cbd5e1;
     text-transform: uppercase;
 }
 
@@ -486,6 +486,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 6px;
     font-size: 0.82rem;
     font-weight: 600;
 }
@@ -503,8 +504,8 @@
 }
 
 .trick-pip {
-    width: 21px;
-    height: 21px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
@@ -512,20 +513,20 @@
     font-size: 0.68rem;
     font-weight: 800;
     border: 1.5px solid rgba(255, 255, 255, 0.22);
-    color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.06);
     transition: transform 0.2s, background 0.2s;
 }
 
 .trick-pip.team-1-win {
-    background: rgba(59, 130, 246, 0.32);
+    background: rgba(59, 130, 246, 0.35);
     border-color: #60a5fa;
     color: #bfdbfe;
     box-shadow: 0 0 8px rgba(59, 130, 246, 0.45);
 }
 
 .trick-pip.team-2-win {
-    background: rgba(239, 68, 68, 0.32);
+    background: rgba(239, 68, 68, 0.35);
     border-color: #f87171;
     color: #fecaca;
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
@@ -544,18 +545,18 @@
 }
 
 .tricks-mini-body {
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
     padding: 8px 12px 10px;
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    max-height: 190px;
+    gap: 8px;
+    max-height: 220px;
     overflow-y: auto;
-    background: rgba(2, 6, 23, 0.45);
+    background: rgba(2, 6, 23, 0.55);
 }
 
 .tricks-mini-empty {
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     color: #94a3b8;
     font-style: italic;
 }
@@ -563,9 +564,9 @@
 .tricks-mini-history-item {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding-bottom: 5px;
-    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    gap: 4px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
 .tricks-mini-history-item:last-child {
@@ -576,22 +577,46 @@
 .tricks-mini-history-head {
     display: flex;
     justify-content: space-between;
-    font-size: 0.72rem;
+    align-items: center;
+    font-size: 0.74rem;
     font-weight: 700;
-    color: #cbd5e1;
+    color: #e2e8f0;
 }
 
 .tricks-mini-history-cards {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
+}
+
+.tricks-mini-card-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 5px;
+    border-radius: 6px;
+}
+
+.tricks-mini-card-entry.winner-entry {
+    background: rgba(251, 191, 36, 0.16);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.tricks-mini-player-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    max-width: 68px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tricks-mini-card-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 5px;
+    padding: 1px 5px;
+    border-radius: 4px;
     background: #f8fafc;
     font-size: 0.72rem;
     font-weight: 800;
@@ -607,7 +632,7 @@
 /* ── Side-of-Table Played Cards Pile ─────────────────── */
 .table-side-pile {
     position: absolute;
-    left: 26px;
+    left: 28px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 45;
@@ -616,24 +641,25 @@
     gap: 6px;
     padding: 8px 10px;
     border-radius: 14px;
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px dashed rgba(255, 255, 255, 0.2);
-    max-width: 155px;
+    background: rgba(0, 0, 0, 0.36);
+    border: 1px dashed rgba(255, 255, 255, 0.24);
+    max-width: 195px;
     pointer-events: auto;
 }
 
 .table-side-pile.classic-pile {
-    left: 118px;
-    top: 24%;
+    left: 112px;
+    top: 18%;
     transform: none;
+    max-width: 220px;
 }
 
 .table-side-pile-label {
-    font-size: 0.64rem;
+    font-size: 0.65rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(255, 255, 255, 0.78);
     text-align: center;
 }
 
@@ -645,21 +671,28 @@
 
 .side-trick-cluster {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 6px;
+    flex-direction: column;
+    gap: 4px;
+    padding: 5px 8px;
     border-radius: 10px;
-    background: rgba(15, 23, 42, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(15, 23, 42, 0.68);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     animation: sideTrickSlideIn 0.35s cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
 }
 
 .side-trick-cluster.won-team-1 {
-    border-color: rgba(96, 165, 250, 0.45);
+    border-color: rgba(96, 165, 250, 0.55);
 }
 
 .side-trick-cluster.won-team-2 {
-    border-color: rgba(248, 113, 113, 0.45);
+    border-color: rgba(248, 113, 113, 0.55);
+}
+
+.side-trick-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
 }
 
 .side-trick-badge {
@@ -669,13 +702,41 @@
     white-space: nowrap;
 }
 
+.side-trick-winner {
+    font-size: 0.66rem;
+    font-weight: 800;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .side-trick-cards {
     display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    justify-content: center;
+}
+
+.side-trick-card-slot {
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    gap: 2px;
+}
+
+.side-trick-player-name {
+    font-size: 0.58rem;
+    font-weight: 700;
+    max-width: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.1;
 }
 
 .mini-table-card {
-    width: 32px;
+    width: 34px;
     height: 46px;
     background: #ffffff;
     border-radius: 5px;
@@ -685,36 +746,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin-left: -8px;
     position: relative;
     user-select: none;
     transition: transform 0.18s;
 }
 
-.mini-table-card:first-child {
-    margin-left: 0;
-    transform: rotate(-5deg);
-}
-
-.mini-table-card:nth-child(2) {
-    transform: rotate(4deg);
-}
-
-.mini-table-card:nth-child(3) {
-    transform: rotate(-3deg);
-}
-
-.mini-table-card:nth-child(4) {
-    transform: rotate(6deg);
-}
-
 .side-trick-cluster:hover .mini-table-card {
-    margin-left: 2px;
-    transform: rotate(0deg) scale(1.06);
-}
-
-.side-trick-cluster:hover .mini-table-card:first-child {
-    margin-left: 0;
+    transform: scale(1.06);
 }
 
 .mini-card-winner {
