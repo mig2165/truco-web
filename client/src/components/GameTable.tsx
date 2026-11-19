@@ -23,6 +23,27 @@ type DebugCommand =
     | { type: 'setPlayerHand'; playerId: string; cards: DebugHandCard[] };
 
 const PEW_PEW_DURATION_MS = 6000;
+const SNIPE_DURATION_MS = 3200;
+
+type SnipeBurstInfo = {
+    burstId: number;
+    winnerCard: { rank: string; suit: string; isManilha?: boolean };
+    runnerUpCard: { rank: string; suit: string; isManilha?: boolean };
+    winnerName: string;
+};
+
+const getCardStrength = (card: any, manilhaRank: string | null | undefined): number | null => {
+    if (!card?.rank || !card?.suit) return null;
+    const suitIdx = CARD_SUITS.indexOf(card.suit);
+    if (suitIdx === -1) return null;
+    const normalRanks = CARD_RANKS.filter((rank) => rank !== manilhaRank);
+    if (card.isManilha) {
+        return normalRanks.length * 4 + suitIdx;
+    }
+    const rankIdx = normalRanks.indexOf(card.rank);
+    if (rankIdx === -1) return null;
+    return rankIdx * 4 + suitIdx;
+};
 
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
@@ -30,12 +51,15 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const [forfeitConfirmOpen, setForfeitConfirmOpen] = useState(false);
     const [pewPewActive, setPewPewActive] = useState(false);
     const [pewPewBurstId, setPewPewBurstId] = useState(0);
+    const [snipeInfo, setSnipeInfo] = useState<SnipeBurstInfo | null>(null);
     const [secretCode, setSecretCode] = useState('');
     const [debugScore, setDebugScore] = useState({ team1: '0', team2: '0' });
     const [debugHandDrafts, setDebugHandDrafts] = useState<Record<string, DebugHandCard[]>>({});
     const lastTableSignatureRef = useRef<string>('');
     const lastRoomRef = useRef<string>('');
     const pewPewTimeoutRef = useRef<number | null>(null);
+    const snipeTimeoutRef = useRef<number | null>(null);
+    const snipeBurstCounterRef = useRef<number>(0);
 
     const isClubsManilha = (card: any) => card?.isManilha && card?.suit === 'clubs';
 
@@ -43,6 +67,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         return () => {
             if (pewPewTimeoutRef.current !== null) {
                 window.clearTimeout(pewPewTimeoutRef.current);
+            }
+            if (snipeTimeoutRef.current !== null) {
+                window.clearTimeout(snipeTimeoutRef.current);
             }
         };
     }, []);
@@ -55,7 +82,12 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 window.clearTimeout(pewPewTimeoutRef.current);
                 pewPewTimeoutRef.current = null;
             }
+            if (snipeTimeoutRef.current !== null) {
+                window.clearTimeout(snipeTimeoutRef.current);
+                snipeTimeoutRef.current = null;
+            }
             setPewPewActive(false);
+            setSnipeInfo(null);
             return;
         }
 
@@ -71,7 +103,12 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 window.clearTimeout(pewPewTimeoutRef.current);
                 pewPewTimeoutRef.current = null;
             }
+            if (snipeTimeoutRef.current !== null) {
+                window.clearTimeout(snipeTimeoutRef.current);
+                snipeTimeoutRef.current = null;
+            }
             setPewPewActive(false);
+            setSnipeInfo(null);
             return;
         }
 
@@ -83,23 +120,72 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
         lastTableSignatureRef.current = currentSignature;
 
-        if (!newlyPlayedEntry || !isClubsManilha(newlyPlayedEntry.card)) {
+        if (!newlyPlayedEntry) {
             return;
         }
 
-        setPewPewBurstId((previousBurstId) => previousBurstId + 1);
-        setPewPewActive(true);
+        if (isClubsManilha(newlyPlayedEntry.card)) {
+            if (snipeTimeoutRef.current !== null) {
+                window.clearTimeout(snipeTimeoutRef.current);
+                snipeTimeoutRef.current = null;
+            }
+            setSnipeInfo(null);
+            setPewPewBurstId((previousBurstId) => previousBurstId + 1);
+            setPewPewActive(true);
 
-        // Keep a single live timeout so unrelated gameState updates do not
-        // cancel the overlay teardown before it runs.
-        if (pewPewTimeoutRef.current !== null) {
-            window.clearTimeout(pewPewTimeoutRef.current);
+            // Keep a single live timeout so unrelated gameState updates do not
+            // cancel the overlay teardown before it runs.
+            if (pewPewTimeoutRef.current !== null) {
+                window.clearTimeout(pewPewTimeoutRef.current);
+            }
+
+            pewPewTimeoutRef.current = window.setTimeout(() => {
+                setPewPewActive(false);
+                pewPewTimeoutRef.current = null;
+            }, PEW_PEW_DURATION_MS);
+            return;
         }
 
-        pewPewTimeoutRef.current = window.setTimeout(() => {
-            setPewPewActive(false);
-            pewPewTimeoutRef.current = null;
-        }, PEW_PEW_DURATION_MS);
+        // Detect a trick won by literally the next single card in strength (e.g. 2♠ beating 2♦)
+        if (gameState.table.length === gameState.players.length && gameState.players.length >= 2) {
+            const scoredEntries = gameState.table
+                .map((entry: any) => ({
+                    entry,
+                    player: gameState.players[entry.playerIndex],
+                    strength: getCardStrength(entry.card, gameState.manilhaRank)
+                }))
+                .filter((item: any) => item.player && item.strength !== null);
+
+            if (scoredEntries.length === gameState.players.length) {
+                scoredEntries.sort((a: any, b: any) => b.strength - a.strength);
+                const winner = scoredEntries[0];
+                const bestOpponent = scoredEntries.find((item: any) => item.player.team !== winner.player.team);
+
+                if (
+                    winner &&
+                    bestOpponent &&
+                    !isClubsManilha(winner.entry.card) &&
+                    winner.strength - bestOpponent.strength === 1
+                ) {
+                    snipeBurstCounterRef.current += 1;
+                    setSnipeInfo({
+                        burstId: snipeBurstCounterRef.current,
+                        winnerCard: winner.entry.card,
+                        runnerUpCard: bestOpponent.entry.card,
+                        winnerName: winner.player.name
+                    });
+
+                    if (snipeTimeoutRef.current !== null) {
+                        window.clearTimeout(snipeTimeoutRef.current);
+                    }
+
+                    snipeTimeoutRef.current = window.setTimeout(() => {
+                        setSnipeInfo(null);
+                        snipeTimeoutRef.current = null;
+                    }, SNIPE_DURATION_MS);
+                }
+            }
+        }
     }, [gameState]);
 
     useEffect(() => {
@@ -557,6 +643,33 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                         <span className="laser-beam laser-beam-6"></span>
                         <span className="laser-beam laser-beam-7"></span>
                         <span className="laser-beam laser-beam-8"></span>
+                    </div>
+                )}
+
+                {snipeInfo && !pewPewActive && (
+                    <div
+                        key={snipeInfo.burstId}
+                        className="snipe-overlay"
+                        aria-hidden="true"
+                    >
+                        <div className="snipe-dim"></div>
+                        <div className="snipe-flash"></div>
+                        <div className="snipe-ring snipe-ring-1"></div>
+                        <div className="snipe-ring snipe-ring-2"></div>
+                        <div className="snipe-slash snipe-slash-1"></div>
+                        <div className="snipe-slash snipe-slash-2"></div>
+                        <span className="snipe-spark snipe-spark-1"></span>
+                        <span className="snipe-spark snipe-spark-2"></span>
+                        <span className="snipe-spark snipe-spark-3"></span>
+                        <span className="snipe-spark snipe-spark-4"></span>
+                        <span className="snipe-spark snipe-spark-5"></span>
+                        <span className="snipe-spark snipe-spark-6"></span>
+                        <div className="snipe-caption">
+                            <span className="snipe-caption-title">SNIPED!</span>
+                            <span className="snipe-caption-sub">
+                                {snipeInfo.winnerCard.rank}{getSuitSymbol(snipeInfo.winnerCard.suit)} &gt; {snipeInfo.runnerUpCard.rank}{getSuitSymbol(snipeInfo.runnerUpCard.suit)}
+                            </span>
+                        </div>
                     </div>
                 )}
 
