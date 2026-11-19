@@ -531,6 +531,18 @@ export class TrucoGameManager {
         const player = state.players[playerIndex];
         if (!player) return;
 
+        if (callType === 'forfeit_round') {
+            if (state._phase !== 'WAITING_FOR_HAND_PHASE' && state._phase !== 'TRICK_PHASE') return;
+            const opponentTeam = player.team === 1 ? 2 : 1;
+            state._maoActive = false;
+            state._maoType = undefined;
+            state._maoCallerId = undefined;
+            state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: null };
+            this.addNotification(state, `${player.name} forfeited the round.`, player.team);
+            this.endRound(state, opponentTeam);
+            return;
+        }
+
         if (state._phase === 'MAO_DE_ONZE_DECISION') {
             if (player.team !== state.maoDeOnzeTeam) return;
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { LogOut, User, X, AlertTriangle } from 'lucide-react';
+import { LogOut, User, X, AlertTriangle, Flag } from 'lucide-react';
 import './GameTable.css';
 import ReportModal from './ReportModal';
 
@@ -27,6 +27,7 @@ const PEW_PEW_DURATION_MS = 6000;
 export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, currentPlayerId, playerName, onLeave }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
+    const [forfeitConfirmOpen, setForfeitConfirmOpen] = useState(false);
     const [pewPewActive, setPewPewActive] = useState(false);
     const [pewPewBurstId, setPewPewBurstId] = useState(0);
     const [secretCode, setSecretCode] = useState('');
@@ -109,6 +110,12 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             team2: String(gameState.points.team2)
         });
     }, [gameState?.points.team1, gameState?.points.team2]);
+
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'playing' || (gameState._phase !== 'WAITING_FOR_HAND_PHASE' && gameState._phase !== 'TRICK_PHASE')) {
+            setForfeitConfirmOpen(false);
+        }
+    }, [gameState?.status, gameState?._phase]);
 
     useEffect(() => {
         if (!gameState?.secretDebug?.active) {
@@ -363,6 +370,46 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 <AlertTriangle size={16} /> Report Issue
             </button>
 
+            {/* Fixed Forfeit Round Button */}
+            {me && gameState.status === 'playing' && (gameState._phase === 'WAITING_FOR_HAND_PHASE' || gameState._phase === 'TRICK_PHASE') && (
+                <button
+                    className="forfeit-trigger glass-panel"
+                    onClick={() => setForfeitConfirmOpen(true)}
+                    title="Forfeit the current round"
+                >
+                    <Flag size={16} /> Forfeit Round
+                </button>
+            )}
+
+            {/* Forfeit Confirmation Modal */}
+            {forfeitConfirmOpen && (
+                <div className="menu-overlay" onClick={() => setForfeitConfirmOpen(false)}>
+                    <div className="player-menu glass-panel forfeit-modal" onClick={e => e.stopPropagation()}>
+                        <button className="menu-close" onClick={() => setForfeitConfirmOpen(false)}><X size={18} /></button>
+                        <h3 className="forfeit-modal-title">Forfeit Round?</h3>
+                        <p className="forfeit-modal-desc">
+                            {gameState.maoDeFerroActive
+                                ? 'Are you sure you want to forfeit Mão de Ferro? Your opponent will win the match immediately.'
+                                : `Are you sure you want to give up this round? Your opponent will be awarded ${gameState.roundPoints} ${gameState.roundPoints === 1 ? 'point' : 'points'}.`}
+                        </p>
+                        <div className="forfeit-modal-actions">
+                            <button className="btn btn-secondary" onClick={() => setForfeitConfirmOpen(false)}>
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-danger"
+                                onClick={() => {
+                                    handleCall('forfeit_round');
+                                    setForfeitConfirmOpen(false);
+                                }}
+                            >
+                                Yes, Forfeit Round
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {menuOpen && (
                 <div className="menu-overlay" onClick={() => setMenuOpen(false)}>
                     <div className="player-menu glass-panel" onClick={e => e.stopPropagation()}>
@@ -485,20 +532,6 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                         <button className="btn btn-danger leave-btn" onClick={onLeave}>
                             <LogOut size={16} /> Leave Table
                         </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Trick call banner */}
-            {gameState.callState.awaitingResponseFromTeam === me?.team && (
-                <div className="call-banner glass-panel">
-                    <h3>👊 Opponent called: {gameState.callState.type?.toUpperCase().replace('_', ' ')}</h3>
-                    <div className="call-actions">
-                        <button className="btn btn-primary" onClick={() => handleCall('accept')}>Accept</button>
-                        <button className="btn btn-secondary" onClick={() => handleCall('decline')}>Fold</button>
-                        {(gameState.callState.type === 'mao_baixa' || gameState.callState.type === 'mao_real') && (
-                            <button className="btn btn-danger" onClick={() => handleCall('call_bluff')}>Call Bluff!</button>
-                        )}
                     </div>
                 </div>
             )}
@@ -656,8 +689,8 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                                 <div className="mao-buttons">
                                     <div style={{ color: '#fbbf24', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>Opponent called {gameState.callState.type === 'mao_baixa' ? 'Mão Baixa' : 'Mão Real'}!</div>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button className="btn btn-secondary" onClick={() => handleCall('call_bluff')}>Call Bluff 🤨</button>
-                                        <button className="btn btn-primary" onClick={() => handleCall('accept')}>Believe It ✅</button>
+                                        <button className="btn btn-secondary" onClick={() => handleCall('call_bluff')}>Call It</button>
+                                        <button className="btn btn-primary" onClick={() => handleCall('accept')}>Let It Go</button>
                                     </div>
                                 </div>
                             )}
