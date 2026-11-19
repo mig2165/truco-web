@@ -581,8 +581,14 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {me && (
                     <div className={`player-position position-bottom ${isMyTurn ? 'my-turn' : ''}`}>
                         <div className="player-hand my-hand">
-                            {me.hand.map((card: any, i: number) =>
-                                renderCard(card, i, false, isMyTurn ? () => handlePlayCard(i) : undefined)
+                            {me.hand.length === 0 && gameState.status === 'playing' && gameState._phase === 'MAO_DE_ONZE_DECISION' && gameState.maoDeOnzeTeam !== me.team ? (
+                                <div className="waiting-cards-indicator" style={{ color: '#94a3b8', fontStyle: 'italic', padding: '10px 16px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)' }}>
+                                    🎴 Cards will be dealt if opponent accepts the round
+                                </div>
+                            ) : (
+                                me.hand.map((card: any, i: number) =>
+                                    renderCard(card, i, false, isMyTurn ? () => handlePlayCard(i) : undefined)
+                                )
                             )}
                         </div>
                         <div className="player-info my-info glass-panel">
@@ -604,18 +610,30 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                         {gameState.status === 'playing' && gameState._phase === 'MAO_DE_ONZE_DECISION' && gameState.maoDeOnzeTeam === me?.team && (
                             <div className="mao-buttons">
                                 <div style={{ color: '#fbbf24', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>⚡ MÃO DE ONZE (11 Points)!</div>
-                                <div style={{ color: 'white', marginBottom: '8px', fontSize: '0.85rem' }}>Review partner's cards. Will you Play or Run?</div>
+                                <div style={{ color: 'white', marginBottom: '8px', fontSize: '0.85rem' }}>
+                                    {isDuel
+                                        ? 'Review your hand. Will you Play or ask for a Reshuffle?'
+                                        : "Review partner's cards. Will you Play or Run?"}
+                                </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button className="btn btn-secondary" onClick={() => handleCall('mao_de_onze_run')}>Run (Opponent +1)</button>
-                                    <button className="btn btn-primary" onClick={() => handleCall('mao_de_onze_play')}>Play Hand</button>
+                                    <button className="btn btn-secondary" onClick={() => handleCall('mao_de_onze_run')}>
+                                        {isDuel ? 'Reshuffle (Opponent +1)' : 'Run (Opponent +1)'}
+                                    </button>
+                                    <button className="btn btn-primary" onClick={() => handleCall('mao_de_onze_play')}>
+                                        {isDuel ? 'Play Hand (Worth 3 Pts)' : 'Play Hand'}
+                                    </button>
                                 </div>
                             </div>
                         )}
 
                         {gameState.status === 'playing' && gameState._phase === 'MAO_DE_ONZE_DECISION' && gameState.maoDeOnzeTeam !== me?.team && (
                             <div className="mao-buttons">
-                                <div style={{ color: '#fbbf24', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>Waiting...</div>
-                                <div style={{ color: 'white', fontSize: '0.85rem' }}>Opponents are deciding on Mão de Onze.</div>
+                                <div style={{ color: '#fbbf24', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>⚡ MÃO DE ONZE</div>
+                                <div style={{ color: 'white', fontSize: '0.85rem' }}>
+                                    {isDuel
+                                        ? 'Opponent has 11 points and is deciding whether to Play or Reshuffle. You will receive cards if they play.'
+                                        : 'Opponents are deciding on Mão de Onze.'}
+                                </div>
                             </div>
                         )}
 

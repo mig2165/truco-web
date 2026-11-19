@@ -16,6 +16,25 @@ export interface ChangelogEntry {
 // Use sections to keep features and fixes grouped in the UI.
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.2.1',
+        date: '19th of November',
+        title: '⚡ 1v1 Mão de Onze & Endgame Cap',
+        sections: [
+            {
+                title: '✨ 1v1 Endgame Rules',
+                items: [
+                    'Points in 1v1 are hard capped at 11: players must play Mão de Onze to win the match.',
+                    'The 11-point duelist receives cards first to decide whether to Play or ask for a Reshuffle.',
+                    'The losing duelist has their cards withheld until the 11-point player accepts the round.',
+                    'Asking for a Reshuffle awards 1 point to the opponent and deals a fresh round.',
+                    'Accepting the round makes it worth 3 points, deals cards to the opponent, and the 11-point player leads trick 1 (unless hand switch occurs).',
+                    'Winning any point in Mão de Onze reaches 12 points and wins the entire match!',
+                    'At 11-11, the match enters Mão de Ferro (face-down cards) to decide the victor.',
+                ],
+            },
+        ],
+    },
+    {
         version: '0.2.0',
         date: '3rd of November',
         title: '⚔️ 1v1 Duel & 2v2 Classic Modes',

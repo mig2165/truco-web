@@ -207,7 +207,7 @@ export const Lobby: React.FC = () => {
                                     <span className="mode-card-badge">Invite 1 Friend</span>
                                 </div>
                                 <p className="mode-card-desc">
-                                    Head-to-head match • {duelCardCount} cards per hand • Truco multiplies round (3, 6, 9 pts) • First to 12 pts wins!
+                                    Head-to-head match • {duelCardCount} cards per hand • Truco multiplies round (3, 6, 9 pts) • Capped at 11 for Mão de Onze • First to 12 pts wins!
                                 </p>
                             </div>
 

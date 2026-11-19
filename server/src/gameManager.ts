@@ -489,7 +489,7 @@ export class TrucoGameManager {
             return;
         }
 
-        if (state.mode === 'classic' && state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE) {
+        if (state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE) {
             state._phase = 'MAO_DE_FERRO';
             state.maoDeFerroActive = true;
             for (const player of state.players) {
@@ -501,13 +501,13 @@ export class TrucoGameManager {
             return;
         }
 
-        const team1Has11 = state.mode === 'classic' && state.points.team1 >= ENDGAME_ENTRY_SCORE;
-        const team2Has11 = state.mode === 'classic' && state.points.team2 >= ENDGAME_ENTRY_SCORE;
+        const team1Has11 = state.points.team1 >= ENDGAME_ENTRY_SCORE;
+        const team2Has11 = state.points.team2 >= ENDGAME_ENTRY_SCORE;
         if (team1Has11 || team2Has11) {
             const onzeTeam = team1Has11 ? 1 : 2;
             state._phase = 'MAO_DE_ONZE_DECISION';
             state.maoDeOnzeTeam = onzeTeam;
-            this.addNotification(state, `Mao de Onze active. Team ${onzeTeam} must decide whether to play or run.`, onzeTeam);
+            this.addNotification(state, `Mao de Onze active. ${state.mode === 'duel' ? `Player ${onzeTeam}` : `Team ${onzeTeam}`} must decide whether to play or run.`, onzeTeam);
             this.emitState(state);
             return;
         }
@@ -536,7 +536,7 @@ export class TrucoGameManager {
 
             if (callType === 'mao_de_onze_run') {
                 const opponentTeam = state.maoDeOnzeTeam === 1 ? 2 : 1;
-                this.addNotification(state, `Team ${state.maoDeOnzeTeam} ran from Mao de Onze.`, player.team);
+                this.addNotification(state, `${state.mode === 'duel' ? player.name : `Team ${state.maoDeOnzeTeam}`} asked for a reshuffle in Mao de Onze.`, player.team);
                 state.maoDeOnzeTeam = null;
                 this.awardPoints(state, opponentTeam, 1);
                 state.winnerTeam = opponentTeam;
@@ -555,7 +555,10 @@ export class TrucoGameManager {
             if (callType === 'mao_de_onze_play') {
                 state.maoDeOnzeActive = true;
                 state.roundPoints = 3;
-                this.addNotification(state, `Team ${state.maoDeOnzeTeam} accepted Mao de Onze.`, player.team);
+                // In 1v1 duel (and general Truco), player who accepted Mao de Onze leads the round
+                state.startingPlayerIndex = playerIndex;
+                state.currentTurnIndex = playerIndex;
+                this.addNotification(state, `${state.mode === 'duel' ? player.name : `Team ${state.maoDeOnzeTeam}`} accepted Mao de Onze (round worth 3 points).`, player.team);
                 state._phase = 'WAITING_FOR_HAND_PHASE';
                 this.emitState(state);
             }
@@ -861,9 +864,13 @@ export class TrucoGameManager {
     }
 
     private awardPoints(state: GameState, team: number, amount: number, options?: { allowGameWin?: boolean }) {
-        // In 1v1 duel mode, points go directly up to 12 (GAME_WIN_SCORE).
-        // In 2v2 classic mode, normal scoring is capped at 11 so raised rounds still flow into Mao de Onze/Ferro.
-        const scoreCap = (state.mode === 'duel' || options?.allowGameWin) ? GAME_WIN_SCORE : ENDGAME_ENTRY_SCORE;
+        let canWinGame = options?.allowGameWin ?? false;
+        if (state.mode === 'duel') {
+            // In 1v1 duel mode, only a player at 11 in Mao de Onze (or in Mao de Ferro) can reach 12 to win the game.
+            // All other scores must cap at 11 (ENDGAME_ENTRY_SCORE).
+            canWinGame = Boolean(state.maoDeFerroActive || (state.maoDeOnzeActive && team === state.maoDeOnzeTeam));
+        }
+        const scoreCap = canWinGame ? GAME_WIN_SCORE : ENDGAME_ENTRY_SCORE;
 
         if (team === 1) {
             state.points.team1 = Math.min(state.points.team1 + amount, scoreCap);
@@ -873,9 +880,6 @@ export class TrucoGameManager {
     }
 
     private shouldEndRoundAfterSpecialCall(state: GameState): boolean {
-        if (state.mode === 'duel') {
-            return state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
-        }
         const reachedGameWin = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
         const reachedMaoDeFerro = state.points.team1 >= ENDGAME_ENTRY_SCORE && state.points.team2 >= ENDGAME_ENTRY_SCORE;
         const reachedEndgameEntry = state.points.team1 >= ENDGAME_ENTRY_SCORE || state.points.team2 >= ENDGAME_ENTRY_SCORE;
@@ -906,6 +910,10 @@ export class TrucoGameManager {
             if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
                 state.status = 'game_end';
                 state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
+                if (state.mode === 'duel') {
+                    if (state.winnerTeam === 1) state.matchWins.team1 += 1;
+                    if (state.winnerTeam === 2) state.matchWins.team2 += 1;
+                }
                 this.emitState(state);
                 return;
             }
@@ -922,39 +930,17 @@ export class TrucoGameManager {
         if (state.mode === 'duel') {
             if (winningTeam === 1) state.matchWins.team1 += 1;
             if (winningTeam === 2) state.matchWins.team2 += 1;
-            this.awardPoints(state, winningTeam, state.roundPoints, { allowGameWin: true });
-            const isGameEnd = state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE;
-            state.status = isGameEnd ? 'game_end' : 'round_end';
-            state._phase = isGameEnd ? undefined : 'ROUND_END';
-            if (isGameEnd) {
-                state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
-            }
-            this.emitState(state);
-            if (!isGameEnd) {
-                this.scheduleRoomTask(state.roomId, 3000, () => {
-                    if (nextStarterIndex !== undefined) {
-                        state.startingPlayerIndex = nextStarterIndex;
-                    } else {
-                        const winnerIndex = state.players.findIndex((player) => player.team === winningTeam);
-                        state.startingPlayerIndex = winnerIndex >= 0 ? winnerIndex : (state.startingPlayerIndex + 1) % state.players.length;
-                    }
-                    this.startNewRound(state);
-                });
-            }
-            return;
         }
-        if (state.maoDeFerroActive) {
-            this.addNotification(state, `Team ${winningTeam} won Mao de Ferro and the game.`, winningTeam);
-            state.maoDeFerroActive = false;
-            state.status = 'round_end';
-            state._phase = 'ROUND_END';
-            this.emitState(state);
 
-            this.scheduleRoomTask(state.roomId, 3000, () => {
-                state.status = 'game_end';
-                state.winnerTeam = winningTeam;
-                this.emitState(state);
-            });
+        if (state.maoDeFerroActive) {
+            this.addNotification(state, `${state.mode === 'duel' ? 'Player' : 'Team'} ${winningTeam} won Mao de Ferro and the match.`, winningTeam);
+            state.maoDeFerroActive = false;
+            if (winningTeam === 1) state.points.team1 = GAME_WIN_SCORE;
+            if (winningTeam === 2) state.points.team2 = GAME_WIN_SCORE;
+            state.status = 'game_end';
+            state.winnerTeam = winningTeam;
+            state._phase = undefined;
+            this.emitState(state);
             return;
         }
 
@@ -964,20 +950,17 @@ export class TrucoGameManager {
                 if (winningTeam === 2) state.points.team2 = GAME_WIN_SCORE;
                 state.maoDeOnzeActive = false;
                 state.maoDeOnzeTeam = null;
-                state.status = 'round_end';
-                state._phase = 'ROUND_END';
+                state.status = 'game_end';
+                state.winnerTeam = winningTeam;
+                state._phase = undefined;
                 this.emitState(state);
-
-                this.scheduleRoomTask(state.roomId, 3000, () => {
-                    state.status = 'game_end';
-                    state.winnerTeam = winningTeam;
-                    this.emitState(state);
-                });
                 return;
             }
 
-            // Beating a Mao de Onze is the only non-owning path that can still award a game-winning score.
-            this.awardPoints(state, winningTeam, 3, { allowGameWin: true });
+            // Losing player / team beats Mao de Onze: awards 3 points
+            // In 1v1 duel mode, points cap at 11 so they must also enter Mao de Onze / Ferro
+            // In 2v2 classic, allowGameWin is true
+            this.awardPoints(state, winningTeam, 3, { allowGameWin: state.mode !== 'duel' });
             state.maoDeOnzeActive = false;
             state.maoDeOnzeTeam = null;
             state.status = 'round_end';
@@ -1040,6 +1023,18 @@ export class TrucoGameManager {
                         return {
                             ...player,
                             hand: player.hand.map(() => ({ suit: 'hidden' as never, rank: '?' as never, value: 0, isManilha: false, manilhaValue: 0 }))
+                        };
+                    }
+
+                    if (state._phase === 'MAO_DE_ONZE_DECISION') {
+                        // The player/team with 11 points receives their cards first to decide.
+                        // The losing player/team does not receive their cards until the round is accepted.
+                        if (player.team === state.maoDeOnzeTeam && viewer.team === state.maoDeOnzeTeam) {
+                            return { ...player, hand: player.hand };
+                        }
+                        return {
+                            ...player,
+                            hand: []
                         };
                     }
 

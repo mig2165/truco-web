@@ -47,7 +47,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose, mode = 'classic
                                         </ul>
                                     </li>
                                     <li>No 8s, 9s, or 10s in the deck</li>
-                                    <li><strong>Match Victory:</strong> First player to reach <strong>12 points</strong> wins the match! A standard hand awards 1 pt, Truco raises to 3 pts, Double to 6 pts, and Triple to 9 pts.</li>
+                                    <li><strong>Match Victory:</strong> First player to reach <strong>12 points</strong> wins the match! Normal points are <strong>hard capped at 11</strong>, triggering <strong>Mão de Onze</strong>.</li>
                                 </ul>
                             </section>
 
@@ -121,7 +121,25 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ onClose, mode = 'classic
                         </ul>
                     </section>
 
-                    {selectedMode === 'classic' && (
+                    {selectedMode === 'duel' ? (
+                        <section className="rules-section">
+                            <h3>🏁 Endgame Rules (1v1 Mão de Onze)</h3>
+                            <ul>
+                                <li>Normal round scoring is <strong>hard capped at 11 points</strong></li>
+                                <li>When a player reaches <strong>11 points</strong>, they enter <strong>Mão de Onze</strong>:
+                                    <ul>
+                                        <li>The 11-point player <strong>receives their cards first</strong> to review them</li>
+                                        <li>The losing player <strong>does not receive cards</strong> until the 11-point player accepts the round</li>
+                                        <li>If the 11-point player chooses to <strong>Reshuffle</strong>, the opponent receives <strong>1 point</strong> and a new round is dealt</li>
+                                        <li>If the 11-point player <strong>Accepts</strong>, the round is automatically worth <strong>3 points</strong>, and the other player receives their cards</li>
+                                        <li>The 11-point player who accepted <strong>starts the round</strong> (unless a hand switch occurs later)</li>
+                                        <li>If the 11-point player wins any point (hand or bluff call), they reach 12 and <strong>win the match</strong>!</li>
+                                    </ul>
+                                </li>
+                                <li>If scores reach <strong>11-11</strong>, the match enters <strong>Mão de Ferro</strong> (all cards face-down; winner takes the match!)</li>
+                            </ul>
+                        </section>
+                    ) : (
                         <section className="rules-section">
                             <h3>🏁 Endgame Rules (2v2)</h3>
                             <ul>
