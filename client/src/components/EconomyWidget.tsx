@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
+import { setStoredFeltTheme, ShopModal } from './ShopModal';
 import './EconomyWidget.css';
 
 interface PlayerProfile {
@@ -8,7 +9,9 @@ interface PlayerProfile {
     bucksBalance: number;
     gamesPlayed: number;
     gamesWon: number;
+    currentStreak?: number;
     totalEarned: number;
+    equipped?: { felt: string; cardBack: string; title: string };
 }
 
 interface BucksTransaction {
@@ -30,6 +33,7 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
     const [profile, setProfile] = useState<PlayerProfile | null>(null);
     const [transactions, setTransactions] = useState<BucksTransaction[]>([]);
     const [showLedger, setShowLedger] = useState(false);
+    const [shopOpen, setShopOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -40,6 +44,9 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
             if (res.ok) {
                 const data = await res.json() as PlayerProfile;
                 setProfile(data);
+                if (data.equipped?.felt) {
+                    setStoredFeltTheme(data.equipped.felt);
+                }
             }
         } catch {
             // silently ignore network errors
@@ -89,6 +96,10 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
             case 'starter_grant': return '🎁 Starter';
             case 'match_win':     return '🏆 Win';
             case 'match_loss':    return '🎮 Match';
+            case 'wager_escrow':  return '🎲 Ante';
+            case 'wager_payout':  return '💰 Pot Win';
+            case 'wager_refund':  return '↩️ Refund';
+            case 'shop_purchase': return '🛍️ Shop';
             case 'admin_adjustment': return '⚙️ Admin';
             default:              return type;
         }
@@ -97,7 +108,7 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
     if (!profile) return null;
 
     return (
-        <div className="economy-widget">
+        <div className="economy-widget" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <button
                 className="economy-widget__balance"
                 onClick={handleToggleLedger}
@@ -106,8 +117,28 @@ export const EconomyWidget: React.FC<EconomyWidgetProps> = (_props) => {
                 <span className="economy-widget__coin">🪙</span>
                 <span className="economy-widget__amount">{profile.bucksBalance.toLocaleString()}</span>
                 <span className="economy-widget__label">Bucks</span>
+                {(profile.currentStreak ?? 0) > 0 && (
+                    <span style={{ color: '#fb923c', fontWeight: 800, marginLeft: '4px' }}>
+                        🔥{profile.currentStreak}
+                    </span>
+                )}
                 <span className="economy-widget__chevron">{showLedger ? '▲' : '▼'}</span>
             </button>
+            <button
+                type="button"
+                className="economy-widget__balance"
+                onClick={() => setShopOpen(true)}
+                title="Open Bucks Cosmetic Shop"
+            >
+                <span>🛍️</span>
+                <span className="economy-widget__label">Shop</span>
+            </button>
+            <ShopModal
+                open={shopOpen}
+                onClose={() => setShopOpen(false)}
+                isAuthenticated={true}
+                onBalanceChanged={() => { void fetchProfile(); }}
+            />
 
             {showLedger && (
                 <div className="economy-widget__ledger">

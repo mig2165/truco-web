@@ -16,6 +16,31 @@ export interface ChangelogEntry {
 // Use sections to keep features and fixes grouped in the UI.
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.0',
+        date: '24th of November',
+        title: '🔥 Wagers, Cosmetics, Partner Signals, Emotes & Tactical Play',
+        sections: [
+            {
+                title: '✨ New Table Features',
+                items: [
+                    'Added a direct Leave Table button in the top-right table HUD (and Leave Room in waiting lobbies) with safe confirmation dialogs.',
+                    'Added synthesized Web Audio sound effects for card plays, covered cards, Truco slams, ZAP, SNIPED!, emotes, and turn timer ticks, plus a mute toggle.',
+                    'Added Quick Emote bubbles above seats and 2v2 Classic Partner Signals (Sinais) with a 35% chance of giving opponents a subtle glance tell.',
+                    'Added direct counter-raises: respond to Truco with Raise Double (6) or respond to Double with Raise Triple (9).',
+                    'Added Carta Coberta (Play Face-Down) after trick 1: conceal a throwaway card from opponents until round end.',
+                    'Added optional Turn Timers (Off, 20s, 30s) and Bucks Wager tables (Free, 25, or 100 Bucks ante).',
+                ],
+            },
+            {
+                title: '🛍️ Cosmetics & Leaderboard',
+                items: [
+                    'Added the Cosmetic Shop: unlock and equip Table Felt themes, Card Backs, and Player Titles using Bucks.',
+                    'Added Win Streaks, Hall of Fame Leaderboard, and live streak/title badges at the table.',
+                ],
+            },
+        ],
+    },
+    {
         version: '0.2.1',
         date: '19th of November',
         title: '⚡ 1v1 Mão de Onze & Endgame Cap',

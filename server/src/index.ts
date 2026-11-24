@@ -277,15 +277,80 @@ app.get('/api/economy/transactions', (req, res) => {
 });
 
 /**
+ * GET /api/economy/shop
+ * Public catalog of unlockable table felts, card backs, and player titles.
+ */
+app.get('/api/economy/shop', (_req, res) => {
+  res.json(economyService.getShopCatalog());
+});
+
+/**
+ * POST /api/economy/shop/buy
+ * Body: { itemId: string }
+ */
+app.post('/api/economy/shop/buy', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Sign in to purchase cosmetics with Bucks' });
+    return;
+  }
+  const { itemId } = req.body as { itemId?: string };
+  if (!itemId) {
+    res.status(400).json({ error: 'Missing itemId' });
+    return;
+  }
+  try {
+    economyService.getOrCreateProfile(account.id, account.displayName);
+    const result = economyService.purchaseItem(account.id, itemId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+/**
+ * POST /api/economy/shop/equip
+ * Body: { itemId: string }
+ */
+app.post('/api/economy/shop/equip', (req, res) => {
+  const account = getAuthAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Sign in to equip cosmetics' });
+    return;
+  }
+  const { itemId } = req.body as { itemId?: string };
+  if (!itemId) {
+    res.status(400).json({ error: 'Missing itemId' });
+    return;
+  }
+  try {
+    economyService.getOrCreateProfile(account.id, account.displayName);
+    const profile = economyService.equipItem(account.id, itemId);
+    res.json({ profile });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+/**
+ * GET /api/leaderboard
+ * Public top players leaderboard sorted by wins, streak, and Bucks.
+ */
+app.get('/api/leaderboard', (_req, res) => {
+  res.json(economyService.getLeaderboard(25));
+});
+
+/**
  * POST /api/economy/match-result
- * Body: { playerId: string, roomId: string, isWinner: boolean }
+ * Body: { playerId: string, roomId: string, isWinner: boolean, mode?: 'duel' | 'classic' }
  * Records a post-match Bucks reward idempotently, checking if playerId relates to a real account.
  */
 app.post('/api/economy/match-result', (req, res) => {
-  const { playerId, roomId, isWinner } = req.body as {
+  const { playerId, roomId, isWinner, mode } = req.body as {
     playerId?: string;
     roomId?: string;
     isWinner?: boolean;
+    mode?: 'duel' | 'classic';
   };
 
   if (!playerId || !roomId || typeof isWinner !== 'boolean') {
@@ -302,7 +367,7 @@ app.post('/api/economy/match-result', (req, res) => {
   }
 
   try {
-    const result = economyService.recordMatchResult(account.id, roomId, isWinner);
+    const result = economyService.recordMatchResult(account.id, roomId, isWinner, mode);
     res.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -482,7 +547,31 @@ function buildTimeline(
 
 // ── Socket.io ──────────────────────────────────────────────────────────────────
 
+function parseCookieValue(cookieHeader: string | undefined, name: string): string | null {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k === name) {
+      return decodeURIComponent(rest.join('='));
+    }
+  }
+  return null;
+}
+
 io.on('connection', (socket) => {
+  const rawToken = parseCookieValue(socket.handshake.headers.cookie, 'token');
+  if (rawToken) {
+    try {
+      const decoded = jwt.verify(rawToken, JWT_SECRET) as { id: string };
+      const account = authService.getAccount(decoded.id);
+      if (account) {
+        socket.data.accountId = account.id;
+      }
+    } catch {
+      // ignore invalid/expired token; treat as guest
+    }
+  }
   console.log(`User connected: ${socket.id}`);
   gameManager.handleConnection(socket);
   // Keep the shared lobby presence counter in sync for all connected clients.

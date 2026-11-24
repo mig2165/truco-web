@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { LogOut, User, X, AlertTriangle, Flag } from 'lucide-react';
+import { LogOut, User, X, AlertTriangle, Flag, Volume2, VolumeX, Smile } from 'lucide-react';
 import './GameTable.css';
 import ReportModal from './ReportModal';
+import { ModalDialog } from './ModalDialog';
+import { getStoredFeltTheme } from './ShopModal';
+import { playSoundEffect, isSoundMuted, setSoundMuted } from '../lib/soundEffects';
 
 interface GameTableProps {
     gameState: any;
@@ -25,6 +28,23 @@ type DebugCommand =
 const PEW_PEW_DURATION_MS = 6000;
 const SNIPE_DURATION_MS = 3200;
 
+const QUICK_EMOTE_OPTIONS = [
+    { key: 'truco', icon: '🔥', text: 'TRUCO?!' },
+    { key: 'snipe', icon: '🎯', text: 'Nice Snipe!' },
+    { key: 'bluff', icon: '🤨', text: 'Bluffing!' },
+    { key: 'sweat', icon: '😅', text: 'Sweating...' },
+    { key: 'ez', icon: '😎', text: 'Too Easy!' },
+    { key: 'gg', icon: '🤝', text: 'Good Game!' },
+] as const;
+
+const PARTNER_SIGNAL_OPTIONS = [
+    { key: 'zap', icon: '😉', label: 'Wink', hint: 'Zap (Clubs Manilha)' },
+    { key: 'copas', icon: '🤨', label: 'Eyebrow', hint: 'Copas (Hearts Manilha)' },
+    { key: 'espadilha', icon: '😗', label: 'Whistle', hint: 'Espadilha / Strong 3' },
+    { key: 'high', icon: '😤', label: 'Nod', hint: 'Push stakes!' },
+    { key: 'low', icon: '🫣', label: 'Shrug', hint: 'Play safe' },
+] as const;
+
 type SnipeBurstInfo = {
     burstId: number;
     winnerCard: { rank: string; suit: string; isManilha?: boolean };
@@ -32,7 +52,23 @@ type SnipeBurstInfo = {
     winnerName: string;
 };
 
+type ActiveEmote = {
+    id: string;
+    icon: string;
+    text: string;
+};
+
+type PartnerSignalToast = {
+    id: string;
+    senderName: string;
+    icon: string;
+    label: string;
+    hint: string;
+    isTell: boolean;
+};
+
 const getCardStrength = (card: any, manilhaRank: string | null | undefined): number | null => {
+    if (card?.isCovered) return -1;
     if (!card?.rank || !card?.suit) return null;
     const suitIdx = CARD_SUITS.indexOf(card.suit);
     if (suitIdx === -1) return null;
@@ -49,6 +85,15 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const [menuOpen, setMenuOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
     const [forfeitConfirmOpen, setForfeitConfirmOpen] = useState(false);
+    const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+    const [soundMuted, setSoundMutedState] = useState(() => isSoundMuted());
+    const [feltTheme, setFeltTheme] = useState(() => getStoredFeltTheme());
+    const [playCoveredNext, setPlayCoveredNext] = useState(false);
+    const [emoteMenuOpen, setEmoteMenuOpen] = useState(false);
+    const [signalMenuOpen, setSignalMenuOpen] = useState(false);
+    const [activeEmotes, setActiveEmotes] = useState<Record<string, ActiveEmote>>({});
+    const [partnerSignalToast, setPartnerSignalToast] = useState<PartnerSignalToast | null>(null);
+    const [turnSecondsLeft, setTurnSecondsLeft] = useState<number | null>(null);
     const [tricksTabExpanded, setTricksTabExpanded] = useState(true);
     const [clientTrickHistory, setClientTrickHistory] = useState<any[]>([]);
     const [pewPewActive, setPewPewActive] = useState(false);
@@ -59,11 +104,16 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const [debugHandDrafts, setDebugHandDrafts] = useState<Record<string, DebugHandCard[]>>({});
     const lastTableSignatureRef = useRef<string>('');
     const lastRoomRef = useRef<string>('');
+    const lastCallKeyRef = useRef<string>('');
+    const lastWinKeyRef = useRef<string>('');
+    const lastTickSecondRef = useRef<number | null>(null);
     const pewPewTimeoutRef = useRef<number | null>(null);
     const snipeTimeoutRef = useRef<number | null>(null);
+    const emoteTimeoutsRef = useRef<Record<string, number>>({});
+    const signalTimeoutRef = useRef<number | null>(null);
     const snipeBurstCounterRef = useRef<number>(0);
 
-    const isClubsManilha = (card: any) => card?.isManilha && card?.suit === 'clubs';
+    const isClubsManilha = (card: any) => !card?.isCovered && card?.isManilha && card?.suit === 'clubs';
 
     useEffect(() => {
         return () => {
@@ -73,8 +123,68 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             if (snipeTimeoutRef.current !== null) {
                 window.clearTimeout(snipeTimeoutRef.current);
             }
+            if (signalTimeoutRef.current !== null) {
+                window.clearTimeout(signalTimeoutRef.current);
+            }
+            for (const timerId of Object.values(emoteTimeoutsRef.current)) {
+                window.clearTimeout(timerId);
+            }
         };
     }, []);
+
+    // Keep table felt synchronized with the Shop modal selection
+    useEffect(() => {
+        const syncCosmetics = () => setFeltTheme(getStoredFeltTheme());
+        window.addEventListener('truco-cosmetics-updated', syncCosmetics);
+        window.addEventListener('storage', syncCosmetics);
+        return () => {
+            window.removeEventListener('truco-cosmetics-updated', syncCosmetics);
+            window.removeEventListener('storage', syncCosmetics);
+        };
+    }, []);
+
+    // Listen for transient table emotes & 2v2 private partner signals
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleTableEmote = (payload: { id: string; playerId: string; icon: string; text: string }) => {
+            playSoundEffect('emote');
+            setActiveEmotes((prev) => ({
+                ...prev,
+                [payload.playerId]: { id: payload.id, icon: payload.icon, text: payload.text },
+            }));
+            if (emoteTimeoutsRef.current[payload.playerId] !== undefined) {
+                window.clearTimeout(emoteTimeoutsRef.current[payload.playerId]);
+            }
+            emoteTimeoutsRef.current[payload.playerId] = window.setTimeout(() => {
+                setActiveEmotes((prev) => {
+                    const next = { ...prev };
+                    delete next[payload.playerId];
+                    return next;
+                });
+                delete emoteTimeoutsRef.current[payload.playerId];
+            }, 3200);
+        };
+
+        const handlePartnerSignal = (payload: PartnerSignalToast) => {
+            playSoundEffect('signal');
+            setPartnerSignalToast(payload);
+            if (signalTimeoutRef.current !== null) {
+                window.clearTimeout(signalTimeoutRef.current);
+            }
+            signalTimeoutRef.current = window.setTimeout(() => {
+                setPartnerSignalToast(null);
+                signalTimeoutRef.current = null;
+            }, 4000);
+        };
+
+        socket.on('tableEmote', handleTableEmote);
+        socket.on('partnerSignal', handlePartnerSignal);
+        return () => {
+            socket.off('tableEmote', handleTableEmote);
+            socket.off('partnerSignal', handlePartnerSignal);
+        };
+    }, [socket]);
 
     useEffect(() => {
         if (!gameState) {
@@ -94,7 +204,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         }
 
         const currentSignature = gameState.table
-            .map((entry: any) => `${entry.playerIndex}:${entry.card?.rank}:${entry.card?.suit}:${entry.card?.isManilha ? 'm' : 'n'}`)
+            .map((entry: any) => `${entry.playerIndex}:${entry.card?.rank}:${entry.card?.suit}:${entry.card?.isManilha ? 'm' : 'n'}:${entry.card?.isCovered ? 'c' : 'u'}`)
             .join('|');
 
         // Reset detection on room switches so reconnecting or spectating another room does not replay stale bursts.
@@ -136,6 +246,14 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         }
 
         const isClubsBlast = isClubsManilha(newlyPlayedEntry.card);
+        if (newlyPlayedEntry.card?.isCovered) {
+            playSoundEffect('covered');
+        } else if (isClubsBlast) {
+            playSoundEffect('zap');
+        } else {
+            playSoundEffect('card');
+        }
+
         if (isClubsBlast) {
             if (snipeTimeoutRef.current !== null) {
                 window.clearTimeout(snipeTimeoutRef.current);
@@ -202,10 +320,13 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                     !isClubsBlast &&
                     winner &&
                     bestOpponent &&
+                    !winner.entry.card?.isCovered &&
+                    !bestOpponent.entry.card?.isCovered &&
                     !isClubsManilha(winner.entry.card) &&
                     winner.strength - bestOpponent.strength === 1
                 ) {
                     snipeBurstCounterRef.current += 1;
+                    playSoundEffect('snipe');
                     setSnipeInfo({
                         burstId: snipeBurstCounterRef.current,
                         winnerCard: winner.entry.card,
@@ -226,6 +347,58 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         }
     }, [gameState]);
 
+    // Truco raise & match-win SFX cues
+    useEffect(() => {
+        const callType = gameState?.status === 'playing' ? gameState?.callState?.type : null;
+        const callKey = callType ? `${callType}:${gameState.callState.callingTeam}:${gameState.roundPoints}` : '';
+        if (callKey && callKey !== lastCallKeyRef.current && (callType === 'truco' || callType === 'double' || callType === 'triple')) {
+            playSoundEffect('truco');
+        }
+        lastCallKeyRef.current = callKey;
+    }, [gameState?.status, gameState?.callState?.type, gameState?.callState?.callingTeam, gameState?.roundPoints]);
+
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'game_end') return;
+        const winKey = `${gameState.roomId}:${gameState.matchIndex ?? 0}`;
+        if (lastWinKeyRef.current === winKey) return;
+        lastWinKeyRef.current = winKey;
+        const myTeam = gameState.players?.find((p: any) => p.id === currentPlayerId)?.team;
+        const wTeam = gameState.winnerTeam
+            ?? (gameState.points.team1 > gameState.points.team2 ? 1 : gameState.points.team2 > gameState.points.team1 ? 2 : null);
+        if (wTeam && myTeam === wTeam) {
+            playSoundEffect('win');
+        }
+    }, [gameState?.status, gameState?.roomId, gameState?.matchIndex, gameState?.winnerTeam, gameState?.points?.team1, gameState?.points?.team2, gameState?.players, currentPlayerId]);
+
+    // Turn timer countdown + final-5s urgent tick sound
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'playing' || !gameState.turnDeadline) {
+            setTurnSecondsLeft(null);
+            return;
+        }
+        const updateTimer = () => {
+            const secs = Math.max(0, Math.ceil((gameState.turnDeadline - Date.now()) / 1000));
+            setTurnSecondsLeft(secs);
+        };
+        updateTimer();
+        const intervalId = window.setInterval(updateTimer, 250);
+        return () => window.clearInterval(intervalId);
+    }, [gameState?.status, gameState?.turnDeadline]);
+
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'playing' || turnSecondsLeft === null) {
+            lastTickSecondRef.current = null;
+            return;
+        }
+        const myPlayer = gameState.players?.find((p: any) => p.id === currentPlayerId);
+        const isTurnMine = gameState.players?.[gameState.currentTurnIndex]?.id === currentPlayerId;
+        const isRespondingToCall = Boolean(myPlayer && gameState.callState?.awaitingResponseFromTeam === myPlayer.team);
+        if ((isTurnMine || isRespondingToCall) && turnSecondsLeft > 0 && turnSecondsLeft <= 5 && lastTickSecondRef.current !== turnSecondsLeft) {
+            lastTickSecondRef.current = turnSecondsLeft;
+            playSoundEffect('tick');
+        }
+    }, [turnSecondsLeft, gameState, currentPlayerId]);
+
     useEffect(() => {
         if (!gameState) return;
 
@@ -240,6 +413,18 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
             setForfeitConfirmOpen(false);
         }
     }, [gameState?.status, gameState?._phase]);
+
+    useEffect(() => {
+        if (!gameState || gameState.status !== 'playing' || gameState.callState?.type) {
+            setPlayCoveredNext(false);
+            return;
+        }
+        const tricksTotal = (gameState.tricks?.team1 ?? 0) + (gameState.tricks?.team2 ?? 0);
+        const isTurnMine = gameState.players?.[gameState.currentTurnIndex]?.id === currentPlayerId;
+        if (!isTurnMine || tricksTotal === 0 || gameState.maoDeFerroActive) {
+            setPlayCoveredNext(false);
+        }
+    }, [gameState, currentPlayerId]);
 
     useEffect(() => {
         if (!gameState?.secretDebug?.active) {
@@ -269,6 +454,32 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const secretDebugActive = Boolean(gameState.secretDebug?.active);
     const allPlayersReady = gameState.players.every((p: any) => p.maoBaixaReady);
 
+    const toggleMute = () => {
+        const next = !soundMuted;
+        setSoundMuted(next);
+        setSoundMutedState(next);
+    };
+
+    const handleSendEmote = (emoteKey: string) => {
+        if (!socket) return;
+        socket.emit('sendEmote', gameState.roomId, emoteKey);
+        setEmoteMenuOpen(false);
+    };
+
+    const handleSendSignal = (signalKey: string) => {
+        if (!socket) return;
+        socket.emit('sendPartnerSignal', gameState.roomId, signalKey);
+        setSignalMenuOpen(false);
+    };
+
+    const handleLeaveTableClick = () => {
+        if (gameState.status === 'game_end') {
+            onLeave?.();
+            return;
+        }
+        setLeaveConfirmOpen(true);
+    };
+
     const sendDebugCommand = (command: DebugCommand) => {
         if (!socket) return;
         socket.emit('debugCommand', gameState.roomId, command);
@@ -277,7 +488,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const handlePlayCard = (index: number) => {
         const awaitingMyTeam = gameState.callState?.awaitingResponseFromTeam === me?.team;
         if (socket && isMyTurn && allPlayersReady && !awaitingMyTeam && !gameState.callState?.type) {
-            socket.emit('playCard', gameState.roomId, index);
+            const useCovered = playCoveredNext && tricksPlayed >= 1 && !gameState.maoDeFerroActive;
+            socket.emit('playCard', gameState.roomId, index, useCovered);
+            setPlayCoveredNext(false);
         }
     };
 
@@ -366,6 +579,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
     const canCallDouble = !endgameHandActive && gameState.roundPoints === 3 && gameState.callState.lastCallTeam !== me?.team;
     const canCallTriple = !endgameHandActive && gameState.roundPoints === 6 && gameState.callState.lastCallTeam !== me?.team;
     const canCallMao = tricksPlayed === 0 && !gameState.callState.type && !me?.maoBaixaReady;
+    const canPlayCovered = tricksPlayed >= 1 && !gameState.maoDeFerroActive;
     const winningTeam = gameState.winnerTeam
         ?? (gameState.points.team1 > gameState.points.team2 ? 1 : gameState.points.team2 > gameState.points.team1 ? 2 : null);
     const winningTeamLabel = isDuel
@@ -386,22 +600,31 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
 
     const getSuitColor = (suit: string) => (suit === 'hearts' || suit === 'diamonds') ? 'red' : 'black';
 
-    const renderCard = (card: any, index: number, hidden = false, onClick?: () => void) => {
-        if (hidden) {
+    const renderCard = (card: any, index: number, hidden = false, onClick?: () => void, cardBackId?: string) => {
+        const isMaskedCovered = Boolean(card?.isCovered) && (card?.rank === '?' || card?.suit === 'hidden');
+        if (hidden || isMaskedCovered) {
             return (
-                <div key={index} className="playing-card back">
+                <div
+                    key={index}
+                    className={`playing-card back ${cardBackId || 'back_slate'} ${card?.isCovered ? 'covered-card' : ''}`}
+                    onClick={onClick}
+                    title={card?.isCovered ? 'Played face-down (-1 power)' : undefined}
+                >
                     <div className="card-pattern"></div>
+                    {card?.isCovered && <span className="covered-card-badge">🕵️</span>}
                 </div>
             );
         }
         return (
             <div
                 key={index}
-                className={`playing-card front ${onClick ? 'playable' : ''} ${card?.isManilha ? 'manilha-glow' : ''}`}
+                className={`playing-card front ${onClick ? 'playable' : ''} ${card?.isManilha && !card?.isCovered ? 'manilha-glow' : ''} ${card?.isCovered ? 'covered-face-card' : ''}`}
                 onClick={onClick}
+                title={card?.isCovered ? 'Played face-down (-1 power)' : undefined}
             >
                 <div className={`card-value ${getSuitColor(card?.suit)}`}>{card?.rank}</div>
                 <div className={`card-suit ${getSuitColor(card?.suit)}`}>{getSuitSymbol(card?.suit)}</div>
+                {card?.isCovered && <span className="covered-face-tag">🕵️</span>}
             </div>
         );
     };
@@ -428,10 +651,9 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
         const isTurn = gameState.players[gameState.currentTurnIndex]?.id === player.id;
         const teamLabel = player.team === 1 ? '🔵 T1' : '🔴 T2';
         const vertical = position === 'left' || position === 'right';
+        const seatEmote = activeEmotes[player.id];
 
         // Find the most recent notification for this player's team
-        // (Since the original poster was a player, we use team as a proxy to show it on *someone* on the team.
-        // Even better is if it was the player, but team works for Truco rules. We grab the last one for the team)
         const teamNotifications = (gameState.notifications || []).filter((n: any) => n.team === player.team);
         const latestNotification = teamNotifications.length > 0 ? teamNotifications[teamNotifications.length - 1] : null;
 
@@ -441,23 +663,34 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 <div className={`player-info ${isPartner ? 'partner-info' : ''} ${isTurn && !isMine ? 'turn-pulse' : ''}`}>
                     <div className={`player-avatar team-avatar-${player.team}`}>{player.name[0]}</div>
                     <span>{player.name}</span>
+                    {player.titleLabel && <span className="player-title-pill">{player.titleLabel}</span>}
+                    {(player.currentStreak ?? 0) > 0 && (
+                        <span className="player-streak-pill" title={`${player.currentStreak} win streak`}>
+                            🔥{player.currentStreak}
+                        </span>
+                    )}
                     {isPartner && <span className="partner-badge">Partner</span>}
                     <span className={`team-tag team-${player.team}`}>{teamLabel}</span>
                     {isTurn && !isMine && allPlayersReady && <span className="thinking-dots">...</span>}
                     {!player.maoBaixaReady && tricksPlayed === 0 && !gameState.callState.type && <span className="thinking-dots" style={{ color: '#a78bfa', marginLeft: '4px' }}>Thinking...</span>}
-                    {latestNotification && (
+                    {seatEmote ? (
+                        <div key={seatEmote.id} className="player-emote-bubble">
+                            <span>{seatEmote.icon}</span>
+                            <span>{seatEmote.text}</span>
+                        </div>
+                    ) : latestNotification ? (
                         <div className="player-notification-bubble">
                             {latestNotification.message}
                         </div>
-                    )}
+                    ) : null}
                 </div>
 
                 {/* Cards in hand */}
                 {position !== 'bottom' && (
                     <div className={`player-hand ${vertical ? 'vertical' : ''}`}>
                         {secretDebugActive || player.exposedHand || (gameState.maoDeOnzeTeam === me?.team && player.team === me?.team) || gameState.status === 'round_end' || gameState.status === 'game_end'
-                            ? player.hand.map((card: any, i: number) => renderCard(card, i, false))
-                            : player.hand.map((_: any, i: number) => renderCard(null, i, true))
+                            ? player.hand.map((card: any, i: number) => renderCard(card, i, false, undefined, player.cardBack))
+                            : player.hand.map((_: any, i: number) => renderCard(null, i, true, undefined, player.cardBack))
                         }
                     </div>
                 )}
@@ -465,10 +698,10 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {/* Card played on table — shown near this player position */}
                 {cardOnTable && position !== 'bottom' && (
                     <div
-                        key={`played-${globalIndex}-${cardOnTable.rank}-${cardOnTable.suit}`}
+                        key={`played-${globalIndex}-${cardOnTable.rank}-${cardOnTable.suit}-${cardOnTable.isCovered ? 'cov' : 'open'}`}
                         className={`played-card-near played-near-${position} played-card-animate`}
                     >
-                        {renderCard(cardOnTable, globalIndex)}
+                        {renderCard(cardOnTable, globalIndex, false, undefined, player.cardBack)}
                         <div className={`played-by-label team-${player.team}`}>{player.name}</div>
                     </div>
                 )}
@@ -504,12 +737,57 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {secretDebugActive && <span className="menu-debug-pill">Debug</span>}
             </button>
 
-            {/* Report Issue Button */}
-            <button className="report-trigger glass-panel" onClick={() => setReportOpen(true)}>
-                <AlertTriangle size={16} /> Report Issue
-            </button>
+            {/* Top-Right HUD: Pot, Timer, Mute, Report & Visible Leave Table Button */}
+            <div className="table-top-right-hud">
+                {(gameState.wagerPot ?? 0) > 0 && (
+                    <div className="hud-pill hud-pot-pill" title="Bucks wager pot awarded to match winner">
+                        🪙 Pot: <strong>{gameState.wagerPot}</strong>
+                    </div>
+                )}
+                {turnSecondsLeft !== null && gameState.status === 'playing' && (
+                    <div
+                        className={`hud-pill hud-timer-pill ${turnSecondsLeft <= 5 ? 'timer-urgent' : ''}`}
+                        title="Turn timer countdown"
+                    >
+                        ⏱️ {turnSecondsLeft}s
+                    </div>
+                )}
+                <button
+                    type="button"
+                    className="hud-icon-btn glass-panel"
+                    onClick={toggleMute}
+                    aria-label={soundMuted ? 'Unmute table sound effects' : 'Mute table sound effects'}
+                    title={soundMuted ? 'Unmute SFX' : 'Mute SFX'}
+                >
+                    {soundMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                </button>
+                <button type="button" className="report-trigger glass-panel" onClick={() => setReportOpen(true)}>
+                    <AlertTriangle size={16} /> Report Issue
+                </button>
+                <button
+                    type="button"
+                    className="leave-table-trigger glass-panel"
+                    onClick={handleLeaveTableClick}
+                    title="Leave table and return to lobby"
+                >
+                    <LogOut size={16} /> Leave Table
+                </button>
+            </div>
 
-            {/* Mini Tricks Tracker Tab (Top-Left below Player Menu — never overlapped by Teacher Mode) */}
+            {/* 2v2 Partner Signal / Subtle Tell Toast */}
+            {partnerSignalToast && (
+                <div className={`partner-signal-banner ${partnerSignalToast.isTell ? 'is-tell' : ''}`}>
+                    <span className="partner-signal-icon">{partnerSignalToast.icon}</span>
+                    <div>
+                        <div className="partner-signal-title">
+                            {partnerSignalToast.isTell ? 'Opponent Tell' : `${partnerSignalToast.senderName} (${partnerSignalToast.label})`}
+                        </div>
+                        <div className="partner-signal-hint">{partnerSignalToast.hint}</div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mini Tricks Tracker Tab (Top-Left Fixed HUD, clear of Teacher Mode) */}
             <div className={`tricks-mini-tab glass-panel ${tricksTabExpanded ? 'expanded' : ''}`}>
                 <button
                     type="button"
@@ -584,15 +862,20 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                                             {trick.cards.map((entry: any, cIdx: number) => {
                                                 const pLabel = formatTrickPlayerName(entry.playerIndex, entry.playerName);
                                                 const isWinner = trick.winningPlayerIndex === entry.playerIndex;
+                                                const isMaskedCov = Boolean(entry.card?.isCovered) && (entry.card?.rank === '?' || entry.card?.suit === 'hidden');
                                                 return (
                                                     <span
                                                         key={cIdx}
                                                         className={`tricks-mini-card-entry ${isWinner ? 'winner-entry' : ''}`}
                                                     >
                                                         <span className={`tricks-mini-player-tag team-${entry.team}`}>{pLabel}:</span>
-                                                        <span className={`tricks-mini-card-chip ${getSuitColor(entry.card?.suit)} ${isWinner ? 'winner-chip' : ''}`}>
-                                                            {entry.card?.rank}{getSuitSymbol(entry.card?.suit)}
-                                                        </span>
+                                                        {isMaskedCov ? (
+                                                            <span className="tricks-mini-card-chip covered-chip" title="Played face-down (-1 power)">🕵️?</span>
+                                                        ) : (
+                                                            <span className={`tricks-mini-card-chip ${getSuitColor(entry.card?.suit)} ${isWinner ? 'winner-chip' : ''}`}>
+                                                                {entry.card?.isCovered ? '🕵️ ' : ''}{entry.card?.rank}{getSuitSymbol(entry.card?.suit)}
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 );
                                             })}
@@ -605,6 +888,68 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 )}
             </div>
 
+            {/* Bottom-Right Quick Emotes & 2v2 Partner Signals Bar (clear of bottom-left Teacher Mode) */}
+            {me && gameState.status === 'playing' && (
+                <div className="table-social-dock">
+                    {emoteMenuOpen && (
+                        <div className="social-popover glass-panel">
+                            {QUICK_EMOTE_OPTIONS.map((em) => (
+                                <button
+                                    key={em.key}
+                                    type="button"
+                                    className="social-popover-item"
+                                    onClick={() => handleSendEmote(em.key)}
+                                >
+                                    <span>{em.icon}</span>
+                                    <span>{em.text}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {signalMenuOpen && !isDuel && (
+                        <div className="social-popover glass-panel signals-popover">
+                            <div className="social-popover-header">2v2 Partner Signal (35% tell risk!)</div>
+                            {PARTNER_SIGNAL_OPTIONS.map((sig) => (
+                                <button
+                                    key={sig.key}
+                                    type="button"
+                                    className="social-popover-item"
+                                    onClick={() => handleSendSignal(sig.key)}
+                                >
+                                    <span>{sig.icon}</span>
+                                    <span><strong>{sig.label}:</strong> {sig.hint}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <div className="social-dock-row">
+                        <button
+                            type="button"
+                            className={`social-dock-btn glass-panel ${emoteMenuOpen ? 'active' : ''}`}
+                            onClick={() => {
+                                setEmoteMenuOpen((p) => !p);
+                                setSignalMenuOpen(false);
+                            }}
+                        >
+                            <Smile size={15} /> Emotes
+                        </button>
+                        {!isDuel && (
+                            <button
+                                type="button"
+                                className={`social-dock-btn glass-panel ${signalMenuOpen ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSignalMenuOpen((p) => !p);
+                                    setEmoteMenuOpen(false);
+                                }}
+                                title="Send secret signal to your 2v2 partner"
+                            >
+                                😉 Signals
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Fixed Forfeit Round Button */}
             {me && gameState.status === 'playing' && (gameState._phase === 'WAITING_FOR_HAND_PHASE' || gameState._phase === 'TRICK_PHASE') && (
                 <button
@@ -616,34 +961,73 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 </button>
             )}
 
-            {/* Forfeit Confirmation Modal */}
-            {forfeitConfirmOpen && (
-                <div className="menu-overlay" onClick={() => setForfeitConfirmOpen(false)}>
-                    <div className="player-menu glass-panel forfeit-modal" onClick={e => e.stopPropagation()}>
-                        <button className="menu-close" onClick={() => setForfeitConfirmOpen(false)}><X size={18} /></button>
-                        <h3 className="forfeit-modal-title">Forfeit Round?</h3>
-                        <p className="forfeit-modal-desc">
-                            {gameState.maoDeFerroActive
-                                ? 'Are you sure you want to forfeit Mão de Ferro? Your opponent will win the match immediately.'
-                                : `Are you sure you want to give up this round? Your opponent will be awarded ${gameState.roundPoints} ${gameState.roundPoints === 1 ? 'point' : 'points'}.`}
-                        </p>
-                        <div className="forfeit-modal-actions">
-                            <button className="btn btn-secondary" onClick={() => setForfeitConfirmOpen(false)}>
-                                Cancel
-                            </button>
-                            <button
-                                className="btn btn-danger"
-                                onClick={() => {
-                                    handleCall('forfeit_round');
-                                    setForfeitConfirmOpen(false);
-                                }}
-                            >
-                                Yes, Forfeit Round
-                            </button>
-                        </div>
-                    </div>
+            {/* Native Dialog: Forfeit Confirmation */}
+            <ModalDialog
+                open={forfeitConfirmOpen}
+                onClose={() => setForfeitConfirmOpen(false)}
+                title="Forfeit Round?"
+                className="forfeit-modal"
+            >
+                <p className="forfeit-modal-desc">
+                    {gameState.maoDeFerroActive
+                        ? 'Are you sure you want to forfeit Mão de Ferro? Your opponent will win the match immediately.'
+                        : `Are you sure you want to give up this round? Your opponent will be awarded ${gameState.roundPoints} ${gameState.roundPoints === 1 ? 'point' : 'points'}.`}
+                </p>
+                <div className="forfeit-modal-actions">
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        autoFocus
+                        onClick={() => setForfeitConfirmOpen(false)}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-danger"
+                        onClick={() => {
+                            handleCall('forfeit_round');
+                            setForfeitConfirmOpen(false);
+                        }}
+                    >
+                        Yes, Forfeit Round
+                    </button>
                 </div>
-            )}
+            </ModalDialog>
+
+            {/* Native Dialog: Leave Table Confirmation */}
+            <ModalDialog
+                open={leaveConfirmOpen}
+                onClose={() => setLeaveConfirmOpen(false)}
+                title="Leave Table?"
+                className="forfeit-modal"
+            >
+                <p className="forfeit-modal-desc">
+                    {(gameState.wagerPot ?? 0) > 0 && gameState.status === 'playing'
+                        ? `An active ${gameState.wagerPot} Bucks wager pot is on this table. Leaving now ends the match and refunds escrowed antes.`
+                        : 'Are you sure you want to leave this table and return to the lobby?'}
+                </p>
+                <div className="forfeit-modal-actions">
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        autoFocus
+                        onClick={() => setLeaveConfirmOpen(false)}
+                    >
+                        Stay at Table
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-danger"
+                        onClick={() => {
+                            setLeaveConfirmOpen(false);
+                            onLeave?.();
+                        }}
+                    >
+                        <LogOut size={15} /> Leave Table
+                    </button>
+                </div>
+            </ModalDialog>
 
             {menuOpen && (
                 <div className="menu-overlay" onClick={() => setMenuOpen(false)}>
@@ -771,7 +1155,7 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 </div>
             )}
 
-            <div className="table-felt">
+            <div className={`table-felt ${feltTheme}`}>
                 {pewPewActive && (
                     <div
                         key={pewPewBurstId}
@@ -864,13 +1248,24 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                                             {trick.cards.map((entry: any, cIdx: number) => {
                                                 const isWinningCard = trick.winningPlayerIndex === entry.playerIndex;
                                                 const pLabel = formatTrickPlayerName(entry.playerIndex, entry.playerName);
+                                                const isMaskedCov = Boolean(entry.card?.isCovered) && (entry.card?.rank === '?' || entry.card?.suit === 'hidden');
                                                 return (
                                                     <div key={cIdx} className="side-trick-card-slot">
                                                         <div
-                                                            className={`mini-table-card ${isWinningCard ? 'mini-card-winner' : ''} ${entry.card?.isManilha ? 'mini-card-manilha' : ''}`}
+                                                            className={`mini-table-card ${isWinningCard ? 'mini-card-winner' : ''} ${entry.card?.isManilha && !entry.card?.isCovered ? 'mini-card-manilha' : ''} ${isMaskedCov ? 'mini-card-covered' : ''}`}
                                                         >
-                                                            <span className={`mini-card-rank ${getSuitColor(entry.card?.suit)}`}>{entry.card?.rank}</span>
-                                                            <span className={`mini-card-suit ${getSuitColor(entry.card?.suit)}`}>{getSuitSymbol(entry.card?.suit)}</span>
+                                                            {isMaskedCov ? (
+                                                                <>
+                                                                    <span className="mini-card-rank">🕵️</span>
+                                                                    <span className="mini-card-suit">?</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span className={`mini-card-rank ${getSuitColor(entry.card?.suit)}`}>{entry.card?.rank}</span>
+                                                                    <span className={`mini-card-suit ${getSuitColor(entry.card?.suit)}`}>{getSuitSymbol(entry.card?.suit)}</span>
+                                                                    {entry.card?.isCovered && <span className="mini-covered-tag">🕵️</span>}
+                                                                </>
+                                                            )}
                                                         </div>
                                                         <span className={`side-trick-player-name team-${entry.team}`}>{pLabel}</span>
                                                     </div>
@@ -922,22 +1317,34 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                 {/* Me — bottom */}
                 {me && (
                     <div className={`player-position position-bottom ${isMyTurn ? 'my-turn' : ''}`}>
-                        <div className="player-hand my-hand">
+                        <div className={`player-hand my-hand ${playCoveredNext ? 'covered-armed' : ''}`}>
                             {me.hand.length === 0 && gameState.status === 'playing' && gameState._phase === 'MAO_DE_ONZE_DECISION' && gameState.maoDeOnzeTeam !== me.team ? (
                                 <div className="waiting-cards-indicator" style={{ color: '#94a3b8', fontStyle: 'italic', padding: '10px 16px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)' }}>
                                     🎴 Cards will be dealt if opponent accepts the round
                                 </div>
                             ) : (
                                 me.hand.map((card: any, i: number) =>
-                                    renderCard(card, i, false, isMyTurn ? () => handlePlayCard(i) : undefined)
+                                    renderCard(card, i, false, isMyTurn ? () => handlePlayCard(i) : undefined, me.cardBack)
                                 )
                             )}
                         </div>
                         <div className="player-info my-info glass-panel">
                             <div className={`player-avatar team-avatar-${me.team}`}>{me.name[0]}</div>
                             <span>{me.name} <span className="you-tag">(You)</span></span>
+                            {me.titleLabel && <span className="player-title-pill">{me.titleLabel}</span>}
+                            {(me.currentStreak ?? 0) > 0 && (
+                                <span className="player-streak-pill" title={`${me.currentStreak} win streak`}>
+                                    🔥{me.currentStreak}
+                                </span>
+                            )}
                             <span className={`team-tag team-${me.team}`}>{me.team === 1 ? '🔵 T1' : '🔴 T2'}</span>
                             {isMyTurn && <span className="turn-indicator">Your Turn!</span>}
+                            {activeEmotes[me.id] && (
+                                <div key={activeEmotes[me.id].id} className="player-emote-bubble">
+                                    <span>{activeEmotes[me.id].icon}</span>
+                                    <span>{activeEmotes[me.id].text}</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Card played by me */}
@@ -945,10 +1352,10 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             const myPlayedCard = getCardOnTable(getGlobalIndex(me));
                             return myPlayedCard ? (
                                 <div
-                                    key={`played-me-${myPlayedCard.rank}-${myPlayedCard.suit}`}
+                                    key={`played-me-${myPlayedCard.rank}-${myPlayedCard.suit}-${myPlayedCard.isCovered ? 'cov' : 'open'}`}
                                     className="played-card-near played-near-bottom played-card-animate"
                                 >
-                                    {renderCard(myPlayedCard, 99)}
+                                    {renderCard(myPlayedCard, 99, false, undefined, me.cardBack)}
                                     <div className={`played-by-label team-${me.team}`}>{me.name} (You)</div>
                                 </div>
                             ) : null;
@@ -1010,9 +1417,19 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                                 </div>
                             )}
 
-                        {/* ── Truco / Respond buttons ── */}
+                        {/* ── Truco / Respond & Covered Card toggle buttons ── */}
                         {gameState.status === 'playing' && !gameState.callState.type && allPlayersReady && isMyTurn && (
                             <div className="action-buttons">
+                                {canPlayCovered && (
+                                    <button
+                                        type="button"
+                                        className={`btn btn-covered-toggle ${playCoveredNext ? 'active' : ''}`}
+                                        onClick={() => setPlayCoveredNext((prev) => !prev)}
+                                        title="Play your next card face-down (-1 power, hidden from opponents until round end)"
+                                    >
+                                        {playCoveredNext ? '🕵️ Face-Down: ON' : '🕵️ Play Face-Down'}
+                                    </button>
+                                )}
                                 {canCallTruco && <button className="btn btn-truco" onClick={() => handleCall('truco')}>TRUCO!</button>}
                                 {canCallDouble && <button className="btn btn-truco" onClick={() => handleCall('double')}>DOUBLE!</button>}
                                 {canCallTriple && <button className="btn btn-truco" onClick={() => handleCall('triple')}>TRIPLE!</button>}
@@ -1025,8 +1442,14 @@ export const GameTable: React.FC<GameTableProps> = ({ gameState, socket, current
                             gameState.callState.awaitingResponseFromTeam === me?.team && (
                                 <div className="mao-buttons">
                                     <div style={{ color: '#f87171', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}>Opponent called {gameState.callState.type?.toUpperCase()}!</div>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
                                         <button className="btn btn-primary" onClick={() => handleCall('accept')}>Accept ✅</button>
+                                        {gameState.callState.type === 'truco' && (
+                                            <button className="btn btn-truco" onClick={() => handleCall('raise_double')}>Raise DOUBLE! (6) 🔥</button>
+                                        )}
+                                        {gameState.callState.type === 'double' && (
+                                            <button className="btn btn-truco" onClick={() => handleCall('raise_triple')}>Raise TRIPLE! (9) 🔥</button>
+                                        )}
                                         <button className="btn btn-secondary" onClick={() => handleCall('fold')}>Fold 🏳️</button>
                                     </div>
                                 </div>

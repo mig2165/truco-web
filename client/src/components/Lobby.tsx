@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp, BookOpen, Swords } from 'lucide-react';
+import { Play, Users, Spade, Bug, Eye, Radio, ChevronDown, ChevronUp, BookOpen, Swords, Trophy, ShoppingBag } from 'lucide-react';
 import { ChangelogLauncher } from './ChangelogLauncher';
 import { EconomyWidget } from './EconomyWidget';
 import { AuthUI } from './AuthUI';
 import { RulesPanel } from './RulesPanel';
+import { ShopModal } from './ShopModal';
+import { LeaderboardModal } from './LeaderboardModal';
 import './Lobby.css';
 
 type LobbyRoomPlayer = {
@@ -22,6 +24,8 @@ type LobbyRoom = {
     isDevRoom: boolean;
     mode: 'classic' | 'duel';
     duelCardCount?: 3 | 5;
+    ante?: 0 | 25 | 100;
+    turnTimerSeconds?: 0 | 20 | 30;
     seatedPlayers: number;
     openSeats: number;
     players: LobbyRoomPlayer[];
@@ -39,12 +43,16 @@ export const Lobby: React.FC = () => {
     const [playerName, setPlayerName] = useState('');
     const [selectedMode, setSelectedMode] = useState<'duel' | 'classic'>('duel');
     const [duelCardCount, setDuelCardCount] = useState<3 | 5>(3);
+    const [ante, setAnte] = useState<0 | 25 | 100>(0);
+    const [turnTimerSeconds, setTurnTimerSeconds] = useState<0 | 20 | 30>(0);
     const [roomIdToJoin, setRoomIdToJoin] = useState('');
     const [devSeed, setDevSeed] = useState('');
     const [devRoomMode, setDevRoomMode] = useState<'duel' | 'classic'>('duel');
     const [error, setError] = useState('');
     const [showActiveRooms, setShowActiveRooms] = useState(false);
     const [rulesOpen, setRulesOpen] = useState(false);
+    const [shopOpen, setShopOpen] = useState(false);
+    const [leaderboardOpen, setLeaderboardOpen] = useState(false);
     const [lobbySnapshot, setLobbySnapshot] = useState<LobbySnapshot>({
         onlinePlayers: 0,
         activeRooms: []
@@ -83,12 +91,17 @@ export const Lobby: React.FC = () => {
         const handleLobbySnapshot = (snapshot: LobbySnapshot) => {
             setLobbySnapshot(snapshot);
         };
+        const handleSocketError = (msg: string) => {
+            setError(msg);
+        };
 
         socket.on('lobbySnapshot', handleLobbySnapshot);
+        socket.on('error', handleSocketError);
         socket.emit('getLobbySnapshot');
 
         return () => {
             socket.off('lobbySnapshot', handleLobbySnapshot);
+            socket.off('error', handleSocketError);
         };
     }, [socket]);
 
@@ -105,12 +118,20 @@ export const Lobby: React.FC = () => {
             setError('Please enter your name or sign in first');
             return;
         }
+        if (ante > 0 && !user) {
+            setError('Sign in with an account to create a Bucks wager table (or choose Free ante)');
+            return;
+        }
+        setError('');
         if (socket) {
             socket.emit('createRoom', {
                 playerName,
                 mode: modeToCreate,
-                duelCardCount: modeToCreate === 'duel' ? duelCardCount : undefined
+                duelCardCount: modeToCreate === 'duel' ? duelCardCount : undefined,
+                ante,
+                turnTimerSeconds
             }, (roomId: string) => {
+                if (!roomId) return;
                 navigate(`/room/${roomId}?name=${encodeURIComponent(playerName)}&create=1&mode=${modeToCreate}${modeToCreate === 'duel' ? `&cards=${duelCardCount}` : ''}`);
             });
         }
@@ -172,14 +193,32 @@ export const Lobby: React.FC = () => {
                             <EconomyWidget playerId={user.id} playerName={user.displayName} />
                         </div>
                     )}
-                    <button
-                        type="button"
-                        className="btn btn-secondary rules-lobby-btn"
-                        onClick={() => setRulesOpen(true)}
-                        title="View Truco Rules"
-                    >
-                        <BookOpen size={16} /> View Game Rules (1v1 & 2v2)
-                    </button>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
+                        <button
+                            type="button"
+                            className="btn btn-secondary rules-lobby-btn"
+                            onClick={() => setRulesOpen(true)}
+                            title="View Truco Rules"
+                        >
+                            <BookOpen size={16} /> Rules (1v1 &amp; 2v2)
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-secondary rules-lobby-btn"
+                            onClick={() => setLeaderboardOpen(true)}
+                            title="View Leaderboard & Stats"
+                        >
+                            <Trophy size={16} /> Leaderboard
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-secondary rules-lobby-btn"
+                            onClick={() => setShopOpen(true)}
+                            title="Open Bucks Cosmetic Shop"
+                        >
+                            <ShoppingBag size={16} /> Cosmetic Shop
+                        </button>
+                    </div>
                     {!isConnected && <p className="connecting">Connecting to server...</p>}
                 </div>
 
@@ -251,6 +290,38 @@ export const Lobby: React.FC = () => {
                                 </div>
                             </div>
                         )}
+
+                        <div className="duel-variant-selector">
+                            <span className="duel-variant-label">Table Wager (Ante):</span>
+                            <div className="duel-variant-buttons">
+                                {([0, 25, 100] as const).map((tier) => (
+                                    <button
+                                        key={tier}
+                                        type="button"
+                                        className={`duel-variant-btn ${ante === tier ? 'active' : ''}`}
+                                        onClick={() => setAnte(tier)}
+                                    >
+                                        {tier === 0 ? '🆓 Free' : `🪙 ${tier} Bucks`}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="duel-variant-selector">
+                            <span className="duel-variant-label">Turn Timer:</span>
+                            <div className="duel-variant-buttons">
+                                {([0, 20, 30] as const).map((sec) => (
+                                    <button
+                                        key={sec}
+                                        type="button"
+                                        className={`duel-variant-btn ${turnTimerSeconds === sec ? 'active' : ''}`}
+                                        onClick={() => setTurnTimerSeconds(sec)}
+                                    >
+                                        {sec === 0 ? '∞ Off' : `⏱️ ${sec}s`}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="actions-divider">
@@ -319,6 +390,16 @@ export const Lobby: React.FC = () => {
                                                             <span className={`room-mode-badge ${room.mode === 'duel' ? 'mode-duel' : 'mode-classic'}`}>
                                                                 {room.mode === 'duel' ? `1v1 Duel (${room.duelCardCount ?? 3} cards)` : '2v2 Classic'}
                                                             </span>
+                                                            {(room.ante ?? 0) > 0 && (
+                                                                <span className="room-mode-badge" style={{ background: 'rgba(251,191,36,0.2)', color: '#fde68a' }}>
+                                                                    🪙 {room.ante} Bucks
+                                                                </span>
+                                                            )}
+                                                            {(room.turnTimerSeconds ?? 0) > 0 && (
+                                                                <span className="room-mode-badge">
+                                                                    ⏱️ {room.turnTimerSeconds}s
+                                                                </span>
+                                                            )}
                                                             {room.isDevRoom && <span className="room-dev-badge">DEV</span>}
                                                         </div>
                                                         <p className="room-summary-meta">{describeRoomStatus(room)}</p>
@@ -427,6 +508,17 @@ export const Lobby: React.FC = () => {
                     mode={selectedMode}
                 />
             )}
+
+            <ShopModal
+                open={shopOpen}
+                onClose={() => setShopOpen(false)}
+                isAuthenticated={Boolean(user)}
+            />
+
+            <LeaderboardModal
+                open={leaderboardOpen}
+                onClose={() => setLeaderboardOpen(false)}
+            />
         </div>
     );
 };

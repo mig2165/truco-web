@@ -7,16 +7,21 @@ export interface Card {
     value: number; // Base value based on rank
     isManilha: boolean;
     manilhaValue: number; // Value if it's a manilha based on suit
+    isCovered?: boolean; // True when played face-down (Carta Coberta)
 }
 
 export type Player = {
     id: string;
+    accountId?: string;
     name: string;
     hand: Card[];
     team: number; // 1 or 2
     isBot: boolean;
     exposedHand: boolean; // True if player lied on Mao Baixa/Real and their hand must be shown to all
     maoBaixaReady: boolean; // True if player has confirmed keeping their hand
+    cardBack?: string;
+    titleLabel?: string;
+    currentStreak?: number;
 };
 
 export type DebugCommand =
@@ -47,6 +52,11 @@ export interface GameState {
     roomId: string;
     mode: 'classic' | 'duel';
     duelCardCount?: 3 | 5;
+    ante?: 0 | 25 | 100;
+    wagerPot?: number;
+    matchIndex?: number;
+    turnTimerSeconds?: 0 | 20 | 30;
+    turnDeadline?: number | null;
     matchWins: { team1: number; team2: number };
     hostPlayerId: string | null;
     hostPlayerName: string | null;
@@ -163,6 +173,10 @@ const SUIT_RANK: Record<string, number> = {
 
 // Returns > 0 if card A wins, < 0 if card B wins, 0 if tie.
 export const compareCards = (cardA: Card, cardB: Card): number => {
+    if (cardA.isCovered && cardB.isCovered) return 0;
+    if (cardA.isCovered) return -1;
+    if (cardB.isCovered) return 1;
+
     if (cardA.isManilha && !cardB.isManilha) return 1;
     if (!cardA.isManilha && cardB.isManilha) return -1;
     if (cardA.isManilha && cardB.isManilha) {
@@ -172,4 +186,17 @@ export const compareCards = (cardA: Card, cardB: Card): number => {
     if (valDiff !== 0) return valDiff;
 
     return SUIT_RANK[cardA.suit] - SUIT_RANK[cardB.suit];
+};
+
+export const getCardStrength = (card: Card, manilhaRank: Rank | null | undefined): number | null => {
+    if (card.isCovered) return -1;
+    const suitIdx = SUITS.indexOf(card.suit);
+    if (suitIdx === -1) return null;
+    const normalRanks = RANKS.filter((r) => r !== manilhaRank);
+    if (card.isManilha) {
+        return normalRanks.length * 4 + suitIdx;
+    }
+    const rankIdx = normalRanks.indexOf(card.rank);
+    if (rankIdx === -1) return null;
+    return rankIdx * 4 + suitIdx;
 };

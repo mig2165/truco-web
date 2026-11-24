@@ -13,12 +13,41 @@ import {
     shuffleDeck,
     getManilhaRank,
     setManilhas,
-    compareCards
+    compareCards,
+    getCardStrength
 } from './gameLogic';
 import { bugReportManager } from './bugReport';
+import { economyService, getTitleLabel } from './economy';
 
-type CreateRoomPayload = string | { playerName: string; devMode?: boolean; seed?: string; mode?: 'classic' | 'duel'; duelCardCount?: 3 | 5 };
+type CreateRoomPayload =
+    | string
+    | {
+        playerName: string;
+        devMode?: boolean;
+        seed?: string;
+        mode?: 'classic' | 'duel';
+        duelCardCount?: 3 | 5;
+        ante?: 0 | 25 | 100;
+        turnTimerSeconds?: 0 | 20 | 30;
+    };
 type ScheduledTask = ReturnType<typeof setTimeout>;
+
+const QUICK_EMOTES: Record<string, { icon: string; text: string }> = {
+    truco: { icon: '🔥', text: 'TRUCO?!' },
+    snipe: { icon: '🎯', text: 'Nice Snipe!' },
+    bluff: { icon: '🤨', text: 'Bluffing!' },
+    sweat: { icon: '😅', text: 'Sweating...' },
+    ez: { icon: '😎', text: 'Too Easy!' },
+    gg: { icon: '🤝', text: 'Good Game!' },
+};
+
+const PARTNER_SIGNALS: Record<string, { icon: string; label: string; hint: string }> = {
+    zap: { icon: '😉', label: 'Wink', hint: 'I hold ZAP (Clubs Manilha)' },
+    copas: { icon: '🤨', label: 'Eyebrow', hint: 'I hold Copas (Hearts Manilha)' },
+    espadilha: { icon: '😗', label: 'Whistle', hint: 'I hold Espadilha / Strong 3' },
+    high: { icon: '😤', label: 'Nod', hint: 'Strong hand — push stakes!' },
+    low: { icon: '🫣', label: 'Shrug', hint: 'Weak hand — play safe' },
+};
 
 type LobbyRoomPlayerSnapshot = {
     name: string;
@@ -33,6 +62,8 @@ type LobbyRoomSnapshot = {
     isDevRoom: boolean;
     mode: 'classic' | 'duel';
     duelCardCount?: 3 | 5;
+    ante?: 0 | 25 | 100;
+    turnTimerSeconds?: 0 | 20 | 30;
     seatedPlayers: number;
     openSeats: number;
     players: LobbyRoomPlayerSnapshot[];
@@ -60,6 +91,8 @@ export class TrucoGameManager {
     private rooms: Map<string, GameState> = new Map();
     private io: Server;
     private botTimers: Map<string, ScheduledTask> = new Map();
+    private turnTimers: Map<string, ScheduledTask> = new Map();
+    private turnTimerKeys: Map<string, string> = new Map();
     private roomTasks: Map<string, Set<ScheduledTask>> = new Map();
     private roomRngs: Map<string, () => number> = new Map();
     private secretDebugPlayers: Map<string, Set<string>> = new Map();
@@ -88,8 +121,10 @@ export class TrucoGameManager {
         socket.on('joinRoom', (roomId: string, playerName: string, chosenTeam: 1 | 2) => this.joinRoom(socket, roomId, playerName, chosenTeam));
         socket.on('leaveRoom', (roomId: string) => this.leaveRoom(socket, roomId));
         socket.on('startRematch', (roomId: string) => this.startRematch(socket, roomId));
-        socket.on('playCard', (roomId: string, cardIndex: number) => this.handlePlayCard(socket, roomId, cardIndex));
+        socket.on('playCard', (roomId: string, cardIndex: number, covered?: boolean) => this.handlePlayCard(socket, roomId, cardIndex, covered));
         socket.on('call', (roomId: string, callType: string) => this.handleCall(socket, roomId, callType));
+        socket.on('sendEmote', (roomId: string, emoteKey: string) => this.handleSendEmote(socket, roomId, emoteKey));
+        socket.on('sendPartnerSignal', (roomId: string, signalKey: string) => this.handlePartnerSignal(socket, roomId, signalKey));
         socket.on('activateSecretDebug', (roomId: string, secretCode: string) => this.activateSecretDebug(socket, roomId, secretCode));
         socket.on('debugCommand', (roomId: string, command: DebugCommand) => this.handleDebugCommand(socket, roomId, command));
         socket.on('debugSetScore', (roomId: string, score: { team1: number; team2: number }) => {
@@ -105,6 +140,20 @@ export class TrucoGameManager {
         this.io.emit('lobbySnapshot', this.buildLobbySnapshot());
     }
 
+    private getSocketAccountId(socket: Socket): string | undefined {
+        const accountId = (socket as { data?: { accountId?: unknown } }).data?.accountId;
+        return typeof accountId === 'string' && accountId.trim() !== '' ? accountId : undefined;
+    }
+
+    private hydratePlayerCosmetics(player: Player): void {
+        if (!player.accountId) return;
+        const profile = economyService.getProfile(player.accountId);
+        if (!profile) return;
+        player.cardBack = profile.equipped?.cardBack ?? 'back_slate';
+        player.titleLabel = getTitleLabel(profile.equipped?.title);
+        player.currentStreak = profile.currentStreak ?? 0;
+    }
+
     private createRoom(socket: Socket, payload: CreateRoomPayload, callback: (roomId: string) => void) {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
         const normalized = this.normalizeCreateRoomPayload(payload);
@@ -115,11 +164,28 @@ export class TrucoGameManager {
             return;
         }
 
+        if (normalized.ante > 0 && !normalized.devMode) {
+            const accountId = this.getSocketAccountId(socket);
+            if (!accountId) {
+                socket.emit('error', `Sign in with an account to create a ${normalized.ante} Bucks wager table.`);
+                callback('');
+                return;
+            }
+            const profile = economyService.getOrCreateProfile(accountId, normalized.playerName);
+            if (profile.bucksBalance < normalized.ante) {
+                socket.emit('error', `Not enough Bucks to create a ${normalized.ante} Bucks wager table.`);
+                callback('');
+                return;
+            }
+        }
+
         const state = this.createEmptyState(
             roomId,
             normalized.devMode ? this.normalizeSeed(normalized.seed) : undefined,
             normalized.mode,
-            normalized.duelCardCount
+            normalized.duelCardCount,
+            normalized.devMode ? 0 : normalized.ante,
+            normalized.turnTimerSeconds
         );
         state.hostPlayerId = socket.id;
         state.hostPlayerName = normalized.playerName;
@@ -141,19 +207,25 @@ export class TrucoGameManager {
                 devMode: false,
                 seed: undefined,
                 mode: 'classic' as const,
-                duelCardCount: undefined
+                duelCardCount: undefined,
+                ante: 0 as const,
+                turnTimerSeconds: 0 as const
             };
         }
 
         const isDuel = payload.mode === 'duel';
         const cardCount = payload.duelCardCount === 3 ? 3 : 5;
+        const ante: 0 | 25 | 100 = payload.ante === 25 ? 25 : payload.ante === 100 ? 100 : 0;
+        const turnTimerSeconds: 0 | 20 | 30 = payload.turnTimerSeconds === 20 ? 20 : payload.turnTimerSeconds === 30 ? 30 : 0;
 
         return {
             playerName: payload.playerName ?? 'Player',
             devMode: Boolean(payload.devMode),
             seed: payload.seed?.trim(),
             mode: isDuel ? ('duel' as const) : ('classic' as const),
-            duelCardCount: (isDuel ? cardCount : undefined) as 3 | 5 | undefined
+            duelCardCount: (isDuel ? cardCount : undefined) as 3 | 5 | undefined,
+            ante,
+            turnTimerSeconds
         };
     }
 
@@ -172,12 +244,19 @@ export class TrucoGameManager {
         roomId: string,
         devSeed?: string,
         mode: 'classic' | 'duel' = 'classic',
-        duelCardCount?: 3 | 5
+        duelCardCount?: 3 | 5,
+        ante: 0 | 25 | 100 = 0,
+        turnTimerSeconds: 0 | 20 | 30 = 0
     ): GameState {
         return {
             roomId,
             mode,
             duelCardCount: mode === 'duel' ? (duelCardCount === 3 ? 3 : 5) : undefined,
+            ante,
+            wagerPot: 0,
+            matchIndex: 0,
+            turnTimerSeconds,
+            turnDeadline: null,
             matchWins: { team1: 0, team2: 0 },
             hostPlayerId: null,
             hostPlayerName: null,
@@ -220,7 +299,8 @@ export class TrucoGameManager {
             team,
             isBot: true,
             exposedHand: false,
-            maoBaixaReady: false
+            maoBaixaReady: false,
+            titleLabel: '🤖 Bot'
         };
     }
 
@@ -261,6 +341,19 @@ export class TrucoGameManager {
             return;
         }
 
+        const accountId = this.getSocketAccountId(socket);
+        if ((state.ante ?? 0) > 0) {
+            if (!accountId) {
+                socket.emit('error', `Sign in with an account to join this ${state.ante} Bucks wager table.`);
+                return;
+            }
+            const profile = economyService.getOrCreateProfile(accountId, playerName);
+            if (profile.bucksBalance < state.ante!) {
+                socket.emit('error', `Not enough Bucks (need ${state.ante} Bucks to join this table).`);
+                return;
+            }
+        }
+
         const team1Count = state.players.filter((player) => player.team === 1).length;
         const team2Count = state.players.filter((player) => player.team === 2).length;
         if (state.mode === 'duel') {
@@ -284,15 +377,18 @@ export class TrucoGameManager {
             state.hostPlayerName = playerName;
         }
 
-        state.players.push({
+        const newPlayer: Player = {
             id: socket.id,
+            accountId,
             name: playerName,
             hand: [],
             team: chosenTeam,
             isBot: false,
             exposedHand: false,
             maoBaixaReady: false
-        });
+        };
+        this.hydratePlayerCosmetics(newPlayer);
+        state.players.push(newPlayer);
 
         // Keep the creator as the room host while refreshing the label clients can show.
         if (state.hostPlayerId === socket.id) {
@@ -321,11 +417,14 @@ export class TrucoGameManager {
             dev: state.dev,
             mode: state.mode,
             duelCardCount: state.duelCardCount,
+            ante: state.ante ?? 0,
+            turnTimerSeconds: state.turnTimerSeconds ?? 0,
             players: state.players.map((player) => ({
                 id: player.id,
                 name: player.name,
                 team: player.team,
-                isBot: player.isBot
+                isBot: player.isBot,
+                titleLabel: player.titleLabel
             }))
         });
     }
@@ -344,6 +443,8 @@ export class TrucoGameManager {
                 isDevRoom: Boolean(state.dev?.enabled),
                 mode: state.mode,
                 duelCardCount: state.duelCardCount,
+                ante: state.ante ?? 0,
+                turnTimerSeconds: state.turnTimerSeconds ?? 0,
                 seatedPlayers: state.players.length,
                 openSeats: Math.max(0, this.roomCapacity(state) - state.players.length),
                 players: state.players.map((player) => ({
@@ -378,17 +479,18 @@ export class TrucoGameManager {
             return;
         }
 
-        state.players = [
-            {
-                id: socket.id,
-                name: playerName,
-                hand: [],
-                team: 1,
-                isBot: false,
-                exposedHand: false,
-                maoBaixaReady: false
-            }
-        ];
+        const humanPlayer: Player = {
+            id: socket.id,
+            accountId: this.getSocketAccountId(socket),
+            name: playerName,
+            hand: [],
+            team: 1,
+            isBot: false,
+            exposedHand: false,
+            maoBaixaReady: false
+        };
+        this.hydratePlayerCosmetics(humanPlayer);
+        state.players = [humanPlayer];
 
         socket.join(state.roomId);
 
@@ -420,8 +522,24 @@ export class TrucoGameManager {
         if (!state.players.some((player) => player.id === socket.id)) return;
         if (state.players.length !== this.roomCapacity(state)) return;
 
+        if ((state.ante ?? 0) > 0 && !state.dev?.enabled) {
+            for (const p of state.players) {
+                if (p.isBot) continue;
+                const prof = p.accountId ? economyService.getProfile(p.accountId) : undefined;
+                if (!prof || prof.bucksBalance < state.ante!) {
+                    socket.emit('error', `${p.name} does not have enough Bucks (${state.ante}) for a wager rematch.`);
+                    return;
+                }
+            }
+        }
+
         // Reuse the seated players so the rematch preserves the exact same teams.
         this.startGame(roomId);
+    }
+
+    private getMatchKey(state: GameState): string {
+        const idx = state.matchIndex ?? 1;
+        return idx <= 1 ? state.roomId : `${state.roomId}:m${idx}`;
     }
 
     private startGame(roomId: string) {
@@ -433,6 +551,26 @@ export class TrucoGameManager {
         state.players = state.mode === 'duel'
             ? [team1Players[0]!, team2Players[0]!]
             : [team1Players[0]!, team2Players[0]!, team1Players[1]!, team2Players[1]!];
+
+        for (const p of state.players) {
+            this.hydratePlayerCosmetics(p);
+        }
+
+        state.matchIndex = (state.matchIndex ?? 0) + 1;
+        state.wagerPot = 0;
+        if ((state.ante ?? 0) > 0 && !state.dev?.enabled) {
+            const matchKey = this.getMatchKey(state);
+            let escrowedCount = 0;
+            for (const p of state.players) {
+                if (!p.isBot && p.accountId) {
+                    if (economyService.escrowAnte(p.accountId, matchKey, state.ante!)) {
+                        escrowedCount++;
+                    }
+                }
+            }
+            state.wagerPot = escrowedCount * state.ante!;
+        }
+
         state.startingPlayerIndex = 0;
         state.points = { team1: 0, team2: 0 };
         state.matchWins = { team1: 0, team2: 0 };
@@ -607,6 +745,7 @@ export class TrucoGameManager {
                         } else {
                             this.addNotification(state, `The call was false. Team ${player.team} gains 1 point.`, player.team);
                             this.awardPoints(state, player.team, 1, { allowGameWin });
+                            economyService.incrementStat(player.accountId, 'bluffsCaught');
                         }
 
                         // Mid-hand Mao scoring should only restart the round when it creates a
@@ -766,6 +905,28 @@ export class TrucoGameManager {
                     const preservedLastCallTeam = state.callState.lastCallTeam;
                     state.callState = { type: null, callingTeam: null, awaitingResponseFromTeam: null, lastCallTeam: preservedLastCallTeam };
                     this.emitState(state);
+                } else if (callType === 'raise_double' && state.callState.type === 'truco') {
+                    // Direct counter-raise: implicitly accepts Truco (3 pts) and raises to Double (6 pts)
+                    state.roundPoints = 3;
+                    this.addNotification(state, `${player.name} raised back to Double Truco (6 pts)!`, player.team);
+                    state.callState = {
+                        type: 'double',
+                        callingTeam: player.team,
+                        awaitingResponseFromTeam: player.team === 1 ? 2 : 1,
+                        lastCallTeam: player.team
+                    };
+                    this.emitState(state);
+                } else if (callType === 'raise_triple' && state.callState.type === 'double') {
+                    // Direct counter-raise: implicitly accepts Double (6 pts) and raises to Triple (9 pts)
+                    state.roundPoints = 6;
+                    this.addNotification(state, `${player.name} raised back to Triple Truco (9 pts)!`, player.team);
+                    state.callState = {
+                        type: 'triple',
+                        callingTeam: player.team,
+                        awaitingResponseFromTeam: player.team === 1 ? 2 : 1,
+                        lastCallTeam: player.team
+                    };
+                    this.emitState(state);
                 } else if (callType === 'decline' || callType === 'fold') {
                     const callingTeam = state.callState.callingTeam!;
                     this.addNotification(state, `${player.name} folded.`, player.team);
@@ -776,17 +937,69 @@ export class TrucoGameManager {
         }
     }
 
-    private handlePlayCard(socket: Socket, roomId: string, cardIndex: number) {
+    private handleSendEmote(socket: Socket, roomId: string, emoteKey: string) {
+        const state = this.rooms.get(roomId);
+        if (!state) return;
+        const player = state.players.find((p) => p.id === socket.id);
+        if (!player) return;
+        const emote = QUICK_EMOTES[emoteKey];
+        if (!emote) return;
+
+        this.io.to(roomId).emit('tableEmote', {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            playerId: player.id,
+            playerName: player.name,
+            team: player.team,
+            icon: emote.icon,
+            text: emote.text
+        });
+    }
+
+    private handlePartnerSignal(socket: Socket, roomId: string, signalKey: string) {
+        const state = this.rooms.get(roomId);
+        if (!state || state.mode !== 'classic' || state.status !== 'playing') return;
+        const sender = state.players.find((p) => p.id === socket.id);
+        if (!sender) return;
+        const signal = PARTNER_SIGNALS[signalKey];
+        if (!signal) return;
+
+        for (const p of state.players) {
+            if (p.isBot) continue;
+            if (p.team === sender.team) {
+                this.io.to(p.id).emit('partnerSignal', {
+                    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    senderId: sender.id,
+                    senderName: sender.name,
+                    icon: signal.icon,
+                    label: signal.label,
+                    hint: signal.hint,
+                    isTell: false
+                });
+            } else if (this.nextRandom(state) < 0.35) {
+                this.io.to(p.id).emit('partnerSignal', {
+                    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    senderId: sender.id,
+                    senderName: 'Opponent',
+                    icon: '👀',
+                    label: 'Subtle Tell',
+                    hint: 'Someone on the other team flashed a quick glance...',
+                    isTell: true
+                });
+            }
+        }
+    }
+
+    private handlePlayCard(socket: Socket, roomId: string, cardIndex: number, covered?: boolean) {
         const state = this.rooms.get(roomId);
         if (!state) return;
 
         const playerIndex = state.players.findIndex((player) => player.id === socket.id);
         if (playerIndex === -1) return;
 
-        this.playCardByIndex(state, playerIndex, cardIndex);
+        this.playCardByIndex(state, playerIndex, cardIndex, Boolean(covered));
     }
 
-    private playCardByIndex(state: GameState, playerIndex: number, cardIndex: number) {
+    private playCardByIndex(state: GameState, playerIndex: number, cardIndex: number, covered = false) {
         if (state.status !== 'playing') return;
         if (state._phase !== 'TRICK_PHASE') return;
         if (playerIndex !== state.currentTurnIndex) return;
@@ -802,9 +1015,18 @@ export class TrucoGameManager {
         const card = player.hand.splice(cardIndex, 1)[0];
         if (!card) return;
 
-        state.table.push({ playerIndex, card: { ...card } });
-        bugReportManager.logGameEvent(state.roomId, `${player.name} played ${this.describeCard(card)}.`);
-        this.appendDevLog(state, `${player.name} played ${this.describeCard(card)}.`);
+        const totalTricksSoFar = state.tricks.team1 + state.tricks.team2;
+        const isCovered = Boolean(covered) && totalTricksSoFar >= 1 && !state.maoDeFerroActive;
+        const playedCard: Card = isCovered ? { ...card, isCovered: true } : { ...card };
+
+        if (!isCovered && card.isManilha && card.suit === 'clubs') {
+            economyService.incrementStat(player.accountId, 'zapsPlayed');
+        }
+
+        state.table.push({ playerIndex, card: playedCard });
+        const desc = isCovered ? 'a face-down card (Carta Coberta)' : this.describeCard(card);
+        bugReportManager.logGameEvent(state.roomId, `${player.name} played ${desc}.`);
+        this.appendDevLog(state, `${player.name} played ${desc}.`);
 
         if (state.table.length < state.players.length) {
             state.currentTurnIndex = (state.currentTurnIndex + 1) % state.players.length;
@@ -827,10 +1049,28 @@ export class TrucoGameManager {
         const winningEntry = state.table[winningEntryIndex]!;
         const winningPlayerIndex = winningEntry.playerIndex;
         const trickStarterIndex = state.table[0]!.playerIndex;
-        const winningTeam = state.players[winningPlayerIndex]!.team;
-        const winningPlayerName = state.players[winningPlayerIndex]!.name;
+        const winningPlayer = state.players[winningPlayerIndex]!;
+        const winningTeam = winningPlayer.team;
+        const winningPlayerName = winningPlayer.name;
         const allTied = state.table.every((entry) => compareCards(entry.card, state.table[0]!.card) === 0);
         const winnerTeamFinal: number | null = allTied ? null : winningTeam;
+
+        // Record +1 Snipe stat if won face-up by literally +1 card power (excluding Clubs Manilha ZAP)
+        if (
+            winnerTeamFinal !== null &&
+            !winningEntry.card.isCovered &&
+            !(winningEntry.card.isManilha && winningEntry.card.suit === 'clubs')
+        ) {
+            const winPower = getCardStrength(winningEntry.card, state.manilhaRank);
+            const oppStrengths = state.table
+                .filter((e) => state.players[e.playerIndex]?.team !== winningTeam && !e.card.isCovered)
+                .map((e) => getCardStrength(e.card, state.manilhaRank))
+                .filter((v): v is number => v !== null);
+            const bestOppPower = oppStrengths.length > 0 ? Math.max(...oppStrengths) : null;
+            if (winPower !== null && bestOppPower !== null && winPower - bestOppPower === 1) {
+                economyService.incrementStat(winningPlayer.accountId, 'snipesLanded');
+            }
+        }
 
         if (winnerTeamFinal === 1) state.tricks.team1++;
         if (winnerTeamFinal === 2) state.tricks.team2++;
@@ -922,6 +1162,22 @@ export class TrucoGameManager {
         return !inEndgameHand && reachedEndgameEntry;
     }
 
+    private finalizeMatchEnd(state: GameState, winningTeam: number) {
+        this.clearTurnTimer(state.roomId);
+        state.status = 'game_end';
+        state.winnerTeam = winningTeam;
+        state._phase = undefined;
+        state.turnDeadline = null;
+
+        if ((state.wagerPot ?? 0) > 0 && !state.dev?.enabled) {
+            const winnerAccounts = state.players
+                .filter((p) => !p.isBot && p.team === winningTeam && Boolean(p.accountId))
+                .map((p) => p.accountId!);
+            economyService.payoutWagerPot(winnerAccounts, this.getMatchKey(state), state.wagerPot!);
+            state.wagerPot = 0;
+        }
+    }
+
     private finishScoredRoundFromSpecialCall(state: GameState, winningTeam: number) {
         // A point awarded mid-hand can push the match into Mao de Onze/Ferro.
         // Restart through startNewRound() so every 11-point score uses the same flow.
@@ -938,12 +1194,12 @@ export class TrucoGameManager {
 
         this.scheduleRoomTask(state.roomId, 3000, () => {
             if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
-                state.status = 'game_end';
-                state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
+                const matchWinner = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
                 if (state.mode === 'duel') {
-                    if (state.winnerTeam === 1) state.matchWins.team1 += 1;
-                    if (state.winnerTeam === 2) state.matchWins.team2 += 1;
+                    if (matchWinner === 1) state.matchWins.team1 += 1;
+                    if (matchWinner === 2) state.matchWins.team2 += 1;
                 }
+                this.finalizeMatchEnd(state, matchWinner);
                 this.emitState(state);
                 return;
             }
@@ -967,9 +1223,7 @@ export class TrucoGameManager {
             state.maoDeFerroActive = false;
             if (winningTeam === 1) state.points.team1 = GAME_WIN_SCORE;
             if (winningTeam === 2) state.points.team2 = GAME_WIN_SCORE;
-            state.status = 'game_end';
-            state.winnerTeam = winningTeam;
-            state._phase = undefined;
+            this.finalizeMatchEnd(state, winningTeam);
             this.emitState(state);
             return;
         }
@@ -980,9 +1234,7 @@ export class TrucoGameManager {
                 if (winningTeam === 2) state.points.team2 = GAME_WIN_SCORE;
                 state.maoDeOnzeActive = false;
                 state.maoDeOnzeTeam = null;
-                state.status = 'game_end';
-                state.winnerTeam = winningTeam;
-                state._phase = undefined;
+                this.finalizeMatchEnd(state, winningTeam);
                 this.emitState(state);
                 return;
             }
@@ -999,8 +1251,8 @@ export class TrucoGameManager {
 
             this.scheduleRoomTask(state.roomId, 2000, () => {
                 if (state.points.team1 >= GAME_WIN_SCORE || state.points.team2 >= GAME_WIN_SCORE) {
-                    state.status = 'game_end';
-                    state.winnerTeam = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
+                    const matchWinner = state.points.team1 >= GAME_WIN_SCORE ? 1 : 2;
+                    this.finalizeMatchEnd(state, matchWinner);
                     this.emitState(state);
                     return;
                 }
@@ -1032,27 +1284,131 @@ export class TrucoGameManager {
         });
     }
 
+    private clearTurnTimer(roomId: string) {
+        const existing = this.turnTimers.get(roomId);
+        if (existing) {
+            clearTimeout(existing);
+            this.turnTimers.delete(roomId);
+        }
+        this.turnTimerKeys.delete(roomId);
+    }
+
+    private syncTurnTimer(state: GameState) {
+        const timerSec = state.turnTimerSeconds ?? 0;
+        if (
+            timerSec <= 0 ||
+            state.status !== 'playing' ||
+            state._phase === 'MAO_REVEAL' ||
+            state._phase === 'ROUND_END' ||
+            (state.players.length > 0 && state.table.length >= state.players.length)
+        ) {
+            this.clearTurnTimer(state.roomId);
+            state.turnDeadline = null;
+            return;
+        }
+
+        const readyMask = state.players.map((p) => (p.maoBaixaReady ? '1' : '0')).join('');
+        const key = `${state._phase}|${state.currentTurnIndex}|${state.callState.type}|${state.callState.awaitingResponseFromTeam}|${state.table.length}|${readyMask}`;
+        if (this.turnTimerKeys.get(state.roomId) === key && state.turnDeadline) {
+            return;
+        }
+
+        this.clearTurnTimer(state.roomId);
+        this.turnTimerKeys.set(state.roomId, key);
+        const durationMs = timerSec * 1000;
+        state.turnDeadline = Date.now() + durationMs;
+
+        const timer = setTimeout(() => {
+            this.turnTimers.delete(state.roomId);
+            this.turnTimerKeys.delete(state.roomId);
+            this.handleTurnTimeout(state);
+        }, durationMs);
+        this.turnTimers.set(state.roomId, timer);
+    }
+
+    private handleTurnTimeout(state: GameState) {
+        if (state.status !== 'playing') return;
+
+        if (state._phase === 'MAO_DE_ONZE_DECISION' && state.maoDeOnzeTeam) {
+            const idx = state.players.findIndex((p) => p.team === state.maoDeOnzeTeam);
+            if (idx !== -1) this.handleCallAction(state, idx, 'mao_de_onze_run');
+            return;
+        }
+
+        if (state.callState.awaitingResponseFromTeam !== null) {
+            const idx = state.players.findIndex((p) => p.team === state.callState.awaitingResponseFromTeam);
+            if (idx !== -1) {
+                const isMao = state.callState.type === 'mao_baixa' || state.callState.type === 'mao_real';
+                this.handleCallAction(state, idx, isMao ? 'accept' : 'fold');
+            }
+            return;
+        }
+
+        if (state._phase === 'WAITING_FOR_HAND_PHASE') {
+            for (let i = 0; i < state.players.length; i++) {
+                if (!state.players[i]!.maoBaixaReady) {
+                    this.handleCallAction(state, i, 'keep_hand');
+                }
+            }
+            return;
+        }
+
+        if (state._phase === 'TRICK_PHASE') {
+            this.playCardByIndex(state, state.currentTurnIndex, 0, false);
+        }
+    }
+
+    private maskCoveredCard(card: Card, revealAll: boolean): Card {
+        if (!card.isCovered || revealAll) {
+            return card;
+        }
+        return {
+            suit: 'hidden' as never,
+            rank: '?' as never,
+            value: -1,
+            isManilha: false,
+            manilhaValue: 0,
+            isCovered: true
+        };
+    }
+
     private emitState(state: GameState) {
+        this.syncTurnTimer(state);
+        const revealCovered = state.status === 'round_end' || state.status === 'game_end';
+
         for (const viewer of state.players) {
             if (viewer.isBot) continue;
 
             const secretDebugActive = this.isSecretDebugPlayer(state.roomId, viewer.id);
+            const showCoveredForViewer = revealCovered || secretDebugActive;
 
             const privateState = {
                 ...state,
-                trickHistory: state.trickHistory ?? [],
+                table: state.table.map((entry) => ({
+                    ...entry,
+                    card: this.maskCoveredCard(entry.card, showCoveredForViewer || state.players[entry.playerIndex]?.id === viewer.id)
+                })),
+                trickHistory: (state.trickHistory ?? []).map((trick) => ({
+                    ...trick,
+                    cards: trick.cards.map((entry) => ({
+                        ...entry,
+                        card: this.maskCoveredCard(entry.card, showCoveredForViewer || state.players[entry.playerIndex]?.id === viewer.id)
+                    }))
+                })),
                 secretDebug: {
                     available: this.secretDebugEnabled,
                     active: secretDebugActive
                 },
                 players: state.players.map((player) => {
+                    const sanitizedPlayer = { ...player, accountId: undefined };
+
                     if (secretDebugActive) {
-                        return { ...player, hand: player.hand };
+                        return { ...sanitizedPlayer, hand: player.hand };
                     }
 
                     if (state.maoDeFerroActive) {
                         return {
-                            ...player,
+                            ...sanitizedPlayer,
                             hand: player.hand.map(() => ({ suit: 'hidden' as never, rank: '?' as never, value: 0, isManilha: false, manilhaValue: 0 }))
                         };
                     }
@@ -1061,24 +1417,24 @@ export class TrucoGameManager {
                         // The player/team with 11 points receives their cards first to decide.
                         // The losing player/team does not receive their cards until the round is accepted.
                         if (player.team === state.maoDeOnzeTeam && viewer.team === state.maoDeOnzeTeam) {
-                            return { ...player, hand: player.hand };
+                            return { ...sanitizedPlayer, hand: player.hand };
                         }
                         return {
-                            ...player,
+                            ...sanitizedPlayer,
                             hand: []
                         };
                     }
 
                     if (state.maoDeOnzeTeam && viewer.team === state.maoDeOnzeTeam && player.team === state.maoDeOnzeTeam) {
-                        return { ...player, hand: player.hand };
+                        return { ...sanitizedPlayer, hand: player.hand };
                     }
 
                     if (state.status === 'round_end' || state.status === 'game_end') {
-                        return { ...player, hand: player.hand };
+                        return { ...sanitizedPlayer, hand: player.hand };
                     }
 
                     return {
-                        ...player,
+                        ...sanitizedPlayer,
                         hand: (player.id === viewer.id || player.exposedHand) ? player.hand : []
                     };
                 })
@@ -1445,6 +1801,19 @@ export class TrucoGameManager {
         // Any queued round transitions are invalid once the seated roster changes.
         this.clearRoomTasks(roomId);
         this.clearBotTimer(roomId);
+        this.clearTurnTimer(roomId);
+
+        // Refund escrowed ante if a wagered match is abandoned before completion
+        if ((state.wagerPot ?? 0) > 0 && state.status !== 'game_end' && (state.ante ?? 0) > 0) {
+            const matchKey = this.getMatchKey(state);
+            for (const p of state.players) {
+                if (!p.isBot && p.accountId) {
+                    economyService.refundAnte(p.accountId, matchKey, state.ante!);
+                }
+            }
+            state.wagerPot = 0;
+        }
+
         state.players.splice(leavingPlayerIndex, 1);
 
         const authorizedPlayers = this.secretDebugPlayers.get(roomId);
@@ -1499,6 +1868,8 @@ export class TrucoGameManager {
         state.currentTurnIndex = waitingState.currentTurnIndex;
         state.points = waitingState.points;
         state.roundPoints = waitingState.roundPoints;
+        state.wagerPot = 0;
+        state.turnDeadline = null;
         state.tricks = waitingState.tricks;
         state.trickHistory = waitingState.trickHistory ?? [];
         state.table = waitingState.table;

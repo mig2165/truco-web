@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
-import { Users, Info, Copy, BookOpen } from 'lucide-react';
+import { Users, Info, Copy, BookOpen, LogOut } from 'lucide-react';
 import {
     getBrowserNotificationPermission,
     isBrowserNotificationSupported,
@@ -137,8 +137,10 @@ export const Room: React.FC = () => {
     useEffect(() => {
         if (!gameState || gameState.status !== 'game_end' || !persistentPlayerId || !roomId) return;
 
-        // Only apply reward once per match room.
-        if (rewardedRoomId.current === roomId) return;
+        const matchKey = (gameState.matchIndex ?? 1) > 1 ? `${roomId}:m${gameState.matchIndex}` : roomId;
+
+        // Only apply reward once per match key (supports rematches).
+        if (rewardedRoomId.current === matchKey) return;
 
         const me = gameState.players.find((p: any) => p.id === socket?.id);
         if (!me) return; // spectators / bots don't get rewards
@@ -147,7 +149,7 @@ export const Room: React.FC = () => {
         if (gameState.winnerTeam == null) return;
 
         // Lock the ref only after we confirm we have a real seated player to reward.
-        rewardedRoomId.current = roomId;
+        rewardedRoomId.current = matchKey;
 
         const isWinner = (me.team as number) === (gameState.winnerTeam as number);
 
@@ -155,7 +157,7 @@ export const Room: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ playerId: persistentPlayerId, roomId, isWinner }),
+            body: JSON.stringify({ playerId: persistentPlayerId, roomId: matchKey, isWinner, mode: gameState.mode }),
         })
             .then(r => r.ok ? r.json() : null)
             .then((data: { alreadyRecorded: boolean; transaction: { amount: number } | null } | null) => {
@@ -524,6 +526,11 @@ export const Room: React.FC = () => {
                     <button className="icon-btn" onClick={() => setRulesOpen(true)} title="Game Rules">
                         <BookOpen size={20} />
                     </button>
+                    {isWaiting && (
+                        <button className="btn btn-secondary" onClick={handleLeave} title="Leave Room" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '0.82rem' }}>
+                            <LogOut size={15} /> Leave Room
+                        </button>
+                    )}
                 </div>
             </header>
 
